@@ -37,8 +37,8 @@ export function App() {
   return (
     <div className="min-h-dvh bg-surface text-on-surface">
       <header className="border-b border-outline-variant bg-surface-bright">
-        <div className="mx-auto flex max-w-lg items-center gap-sm px-md py-md">
-          <span className="grid size-10 place-items-center rounded-lg bg-primary text-on-primary">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-4 sm:px-6">
+          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary text-on-primary">
             <Landmark size={22} />
           </span>
           <div>
@@ -48,30 +48,30 @@ export function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-lg space-y-md px-md py-lg">
+      <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
         <p className="text-body-md text-on-surface-variant">
           Phase 0 scaffold · design system online.
         </p>
 
-        {/* Wiring checks */}
-        <section className="space-y-md rounded-xl border border-outline-variant bg-surface-container-lowest p-lg">
-          <Row label="Worker">
+        {/* Wiring checks — two-up on desktop, stacked on phone */}
+        <section className="grid gap-4 sm:grid-cols-2">
+          <Card label="Worker">
             <span
-              className={`inline-flex items-center gap-xs text-body-md font-medium ${
+              className={`inline-flex items-center gap-2 text-body-lg font-medium ${
                 ok === false ? 'text-negative' : 'text-positive'
               }`}
             >
-              {ok === false ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
+              {ok === false ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
               {status}
             </span>
-          </Row>
-          <Row label="Money core">
+          </Card>
+          <Card label="Money core">
             <span className="tnum text-headline-md text-primary">{formatPaise(12345678)}</span>
-          </Row>
+          </Card>
         </section>
 
         {/* Balance-direction reference: colour + icon + words, never colour alone. */}
-        <section className="space-y-sm">
+        <section className="space-y-2">
           <p className="text-label-caps uppercase text-on-surface-variant">Balance states</p>
           <BalanceSwatch tone="positive" label="Dealer owes you" paise={8249800} />
           <BalanceSwatch tone="negative" label="You owe dealer" paise={11750200} />
@@ -82,11 +82,11 @@ export function App() {
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Card({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-label-caps uppercase text-on-surface-variant">{label}</span>
-      {children}
+    <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-6">
+      <p className="text-label-caps uppercase text-on-surface-variant">{label}</p>
+      <p className="mt-2">{children}</p>
     </div>
   );
 }
@@ -108,8 +108,8 @@ function BalanceSwatch({
   const Icon = styles.Icon;
 
   return (
-    <div className={`flex items-center justify-between rounded-xl px-md py-md ${styles.box}`}>
-      <span className="inline-flex items-center gap-sm text-body-md font-medium">
+    <div className={`flex items-center justify-between rounded-xl px-4 py-4 ${styles.box}`}>
+      <span className="inline-flex items-center gap-2 text-body-lg font-medium">
         <Icon size={18} />
         {label}
       </span>

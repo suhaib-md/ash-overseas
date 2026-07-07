@@ -51,12 +51,9 @@
 
   --color-neutral: #5b5e67; /* "Settled" */
 
-  /* ---------- Named spacing (design vocabulary; numeric p-1/p-2/… still available) ---------- */
-  --spacing-xs: 4px;
-  --spacing-sm: 8px;
-  --spacing-md: 16px;
-  --spacing-lg: 24px;
-  --spacing-xl: 40px;
+  /* Spacing uses Tailwind's numeric scale (4/8/12/16/24/40px = 1/2/3/4/6/10).
+     We deliberately do NOT define custom sm/md/lg spacing names — those collide
+     with the reserved size scale used by max-w-*, text-*, rounded-*. */
 
   /* ---------- Typography scale ---------- */
   --text-display-lg: 32px;

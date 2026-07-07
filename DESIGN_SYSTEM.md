@@ -106,8 +106,10 @@ Generates `text-<name>` (size + line-height + weight + tracking baked in). Font:
 
 ## Spacing & radius
 
-- **Named spacing** (design vocabulary): `xs 4`, `sm 8`, `md 16`, `lg 24`, `xl 40` → `p-md`,
-  `gap-sm`, `space-y-lg`, etc. (Tailwind's numeric `p-4`… still work; prefer named for intent.)
+- **Spacing** uses Tailwind's numeric scale: `1`=4px · `2`=8px · `3`=12px · `4`=16px · `6`=24px ·
+  `10`=40px → `p-4`, `gap-2`, `space-y-6`. Rhythm: `2` inside chips, `4` inside cards & between
+  fields, `6` between sections. _(We deliberately do **not** define custom `sm/md/lg` spacing
+  names — they collide with the reserved size scale and silently break `max-w-lg`, `text-lg`, etc.)_
 - **Radius:** `rounded-lg` (8px) buttons & inputs · `rounded-xl` (12px) cards & panels ·
   `rounded-full` pills, avatars, toggles. _(Refines the mockups: `rounded-full` is now truly
   round; card radius softened slightly for a cleaner read.)_
