@@ -1,8 +1,9 @@
-import { and, eq, inArray, like, sql } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { dealers } from '../db/schema';
 import type { DealerCreateInput, DealerUpdateInput } from '../../shared/schemas';
 import { postOpening } from '../ledger/post';
+import { getBalance } from './ledger';
 
 export type DealerRow = typeof dealers.$inferSelect;
 
@@ -86,26 +87,20 @@ export async function listDealers(
   db: Db,
   opts: { activity: 'purchase' | 'sale' | 'all'; q?: string },
 ): Promise<DealerListItem[]> {
-  const actualBalance = sql<number>`coalesce((
-    select running_balance_paise from ledger_entries le
-    where le.dealer_id = ${dealers.id} and le.account = 'actual'
-    order by le.entry_date desc, le.id desc limit 1
-  ), 0)`;
-
   const conds = [eq(dealers.isArchived, false)];
   if (opts.activity === 'purchase') conds.push(inArray(dealers.type, ['supplier', 'both']));
   else if (opts.activity === 'sale') conds.push(inArray(dealers.type, ['buyer', 'both']));
   if (opts.q && opts.q.trim() !== '') conds.push(like(dealers.name, `%${opts.q.trim()}%`));
 
-  return db
-    .select({
-      id: dealers.id,
-      name: dealers.name,
-      type: dealers.type,
-      gstin: dealers.gstin,
-      actualBalancePaise: actualBalance,
-    })
+  const rows = await db
+    .select({ id: dealers.id, name: dealers.name, type: dealers.type, gstin: dealers.gstin })
     .from(dealers)
     .where(and(...conds))
     .orderBy(dealers.name);
+
+  // Balance per dealer via the same stored-value read the detail view uses. (A raw
+  // correlated subquery here silently returned 0 under the Workers D1 driver.)
+  return Promise.all(
+    rows.map(async (r) => ({ ...r, actualBalancePaise: await getBalance(db, r.id, 'actual') })),
+  );
 }

@@ -100,6 +100,27 @@ describe('dealer + transaction + ledger API', () => {
     expect(body.balances.actual).toMatchObject({ state: 'you_owe', magnitudePaise: R(50000) });
   });
 
+  it('lists the correct inline actual balance per dealer (multi-dealer regression)', async () => {
+    const a = await post('/api/dealers', {
+      name: 'Alpha',
+      type: 'both',
+      openingActualPaise: R(30000),
+    });
+    const b = await post('/api/dealers', {
+      name: 'Beta',
+      type: 'both',
+      openingActualPaise: -R(20000),
+    });
+    const aid = ((await a.json()) as { dealer: { id: number } }).dealer.id;
+    const bid = ((await b.json()) as { dealer: { id: number } }).dealer.id;
+
+    const list = await req('/api/dealers');
+    const ds = ((await list.json()) as { dealers: { id: number; actualBalancePaise: number }[] })
+      .dealers;
+    expect(ds.find((d) => d.id === aid)?.actualBalancePaise).toBe(R(30000));
+    expect(ds.find((d) => d.id === bid)?.actualBalancePaise).toBe(-R(20000));
+  });
+
   it('rejects non-integer paise (float) with 400', async () => {
     const created = await post('/api/dealers', { name: 'D', type: 'both' });
     const { dealer } = (await created.json()) as { dealer: { id: number } };
