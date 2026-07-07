@@ -1,17 +1,19 @@
-import { useEffect, useState } from 'react';
-import {
-  Landmark,
-  CheckCircle2,
-  AlertCircle,
-  ArrowUpRight,
-  ArrowDownRight,
-  Minus,
-} from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { CheckCircle2, AlertCircle, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
+import { AppShell, type NavId } from './components/AppShell';
 import { formatPaise } from '../shared/format';
 
 type Health = { ok: boolean; service: string; time: string };
 
+const TITLES: Record<NavId, string> = {
+  home: 'Home',
+  purchase: 'Purchase',
+  sale: 'Sale',
+  dealers: 'Dealers',
+};
+
 export function App() {
+  const [active, setActive] = useState<NavId>('home');
   const [status, setStatus] = useState('checking…');
   const [ok, setOk] = useState<boolean | null>(null);
 
@@ -35,54 +37,65 @@ export function App() {
   }, []);
 
   return (
-    <div className="min-h-dvh bg-surface text-on-surface">
-      <header className="border-b border-outline-variant bg-surface-bright">
-        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-4 sm:px-6">
-          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary text-on-primary">
-            <Landmark size={22} />
+    <AppShell active={active} onNavigate={setActive} title={TITLES[active]}>
+      {active === 'home' ? (
+        <HomeView status={status} ok={ok} />
+      ) : (
+        <ComingSoon title={TITLES[active]} />
+      )}
+    </AppShell>
+  );
+}
+
+function HomeView({ status, ok }: { status: string; ok: boolean | null }) {
+  return (
+    <div className="space-y-6">
+      <p className="text-body-md text-on-surface-variant">
+        Phase 0 scaffold · design system online.
+      </p>
+
+      {/* Wiring checks — spread across the width on desktop */}
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Card label="Worker">
+          <span
+            className={`inline-flex items-center gap-2 text-body-lg font-medium ${
+              ok === false ? 'text-negative' : 'text-positive'
+            }`}
+          >
+            {ok === false ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+            {status}
           </span>
-          <div>
-            <h1 className="text-headline-sm text-primary">ASH Overseas</h1>
-            <p className="text-label-caps uppercase text-on-surface-variant">Trading Ledger</p>
-          </div>
-        </div>
-      </header>
+        </Card>
+        <Card label="Money core">
+          <span className="tnum text-headline-md text-primary">{formatPaise(12345678)}</span>
+        </Card>
+      </section>
 
-      <main className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
-        <p className="text-body-md text-on-surface-variant">
-          Phase 0 scaffold · design system online.
-        </p>
-
-        {/* Wiring checks — two-up on desktop, stacked on phone */}
-        <section className="grid gap-4 sm:grid-cols-2">
-          <Card label="Worker">
-            <span
-              className={`inline-flex items-center gap-2 text-body-lg font-medium ${
-                ok === false ? 'text-negative' : 'text-positive'
-              }`}
-            >
-              {ok === false ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
-              {status}
-            </span>
-          </Card>
-          <Card label="Money core">
-            <span className="tnum text-headline-md text-primary">{formatPaise(12345678)}</span>
-          </Card>
-        </section>
-
-        {/* Balance-direction reference: colour + icon + words, never colour alone. */}
-        <section className="space-y-2">
-          <p className="text-label-caps uppercase text-on-surface-variant">Balance states</p>
+      {/* Balance-direction reference: colour + icon + words, never colour alone. */}
+      <section>
+        <h2 className="mb-2 text-label-caps uppercase text-on-surface-variant">Balance states</h2>
+        <div className="grid gap-3 lg:grid-cols-3">
           <BalanceSwatch tone="positive" label="Dealer owes you" paise={8249800} />
           <BalanceSwatch tone="negative" label="You owe dealer" paise={11750200} />
           <BalanceSwatch tone="neutral" label="Settled" paise={0} />
-        </section>
-      </main>
+        </div>
+      </section>
     </div>
   );
 }
 
-function Card({ label, children }: { label: string; children: React.ReactNode }) {
+function ComingSoon({ title }: { title: string }) {
+  return (
+    <div className="grid min-h-[50vh] place-items-center rounded-xl border border-dashed border-outline-variant">
+      <div className="text-center">
+        <p className="text-headline-sm text-primary">{title}</p>
+        <p className="mt-1 text-body-md text-on-surface-variant">Wired up in Phase 2.</p>
+      </div>
+    </div>
+  );
+}
+
+function Card({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-6">
       <p className="text-label-caps uppercase text-on-surface-variant">{label}</p>
