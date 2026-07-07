@@ -254,26 +254,22 @@ describe('posting layer against real D1', () => {
     // Second statement violates NOT NULL (missing runningBalancePaise) → whole batch rolls back.
     await expect(
       db.batch([
-        db
-          .insert(transactions)
-          .values({
-            id: 999,
-            humanId: 'SALE-2026-06-9999',
-            mode: 'sale',
-            dealerId,
-            date: new Date(),
-            taxType: 'none',
-          }),
+        db.insert(transactions).values({
+          id: 999,
+          humanId: 'SALE-2026-06-9999',
+          mode: 'sale',
+          dealerId,
+          date: new Date(),
+          taxType: 'none',
+        }),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        db
-          .insert(ledgerEntries)
-          .values({
-            dealerId,
-            account: 'actual',
-            entryDate: new Date(),
-            sourceType: 'transaction',
-            sourceId: 999,
-          } as any),
+        db.insert(ledgerEntries).values({
+          dealerId,
+          account: 'actual',
+          entryDate: new Date(),
+          sourceType: 'transaction',
+          sourceId: 999,
+        } as any),
       ]),
     ).rejects.toThrow();
 
