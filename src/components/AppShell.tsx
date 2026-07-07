@@ -150,11 +150,17 @@ function TabLink({
       type="button"
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
-      className={`flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
-        active ? 'text-primary' : 'text-on-surface-variant'
+      className={`flex flex-col items-center gap-1 py-2 text-[11px] transition-colors ${
+        active ? 'font-semibold text-primary' : 'font-medium text-on-surface-variant'
       }`}
     >
-      <Icon size={22} />
+      <span
+        className={`grid h-8 w-14 place-items-center rounded-full transition-colors ${
+          active ? 'bg-surface-container-high' : ''
+        }`}
+      >
+        <Icon size={21} />
+      </span>
       {item.label}
     </button>
   );
