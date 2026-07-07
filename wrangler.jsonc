@@ -9,7 +9,7 @@
   // every other path falls back to index.html (client-side routing).
   "assets": {
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*"],
   },
 
   "observability": { "enabled": true },
@@ -21,8 +21,8 @@
       "binding": "DB",
       "database_name": "ash-overseas-dev",
       "database_id": "8c7cd9dd-8c53-4f63-b830-b4ffc2d42c1f",
-      "migrations_dir": "migrations"
-    }
+      "migrations_dir": "migrations",
+    },
   ],
 
   // R2 backups are added in Phase 3. When ready: enable R2 in the dashboard,
@@ -36,16 +36,16 @@
       "observability": { "enabled": true },
       "assets": {
         "not_found_handling": "single-page-application",
-        "run_worker_first": ["/api/*"]
+        "run_worker_first": ["/api/*"],
       },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "ash-overseas-prod",
           "database_id": "7385f774-9204-4cbd-9527-a0b27fc9178b",
-          "migrations_dir": "migrations"
-        }
-      ]
-    }
-  }
+          "migrations_dir": "migrations",
+        },
+      ],
+    },
+  },
 }

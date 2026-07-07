@@ -7,22 +7,23 @@ Cloudflare. Business rules live in `SRS.md`; the build plan lives in `CLAUDE.md`
 
 ## 0. Prerequisites (one-time, on your machine)
 
-| Tool | Required | Check |
-|---|---|---|
-| **Node.js** | **≥ 22.15 LTS** (or 24 LTS) | `node --version` |
-| pnpm | ≥ 10 | `pnpm --version` |
-| Git | any recent | `git --version` |
-| A Cloudflare account | free plan is fine | — |
+| Tool                 | Required                    | Check            |
+| -------------------- | --------------------------- | ---------------- |
+| **Node.js**          | **≥ 22.15 LTS** (or 24 LTS) | `node --version` |
+| pnpm                 | ≥ 10                        | `pnpm --version` |
+| Git                  | any recent                  | `git --version`  |
+| A Cloudflare account | free plan is fine           | —                |
 
 > ⚠️ **Node must be ≥ 22.15.** The Cloudflare Vite plugin uses `module.registerHooks`,
 > which was added in Node 22.15. On older 22.x, `pnpm dev` / `pnpm build` fail with
-> *"node:module does not provide an export named 'registerHooks'"*.
+> _"node:module does not provide an export named 'registerHooks'"_.
 >
 > **Upgrade on Windows** (pick one):
+>
 > - `winget install OpenJS.NodeJS.LTS` (then reopen the terminal), **or**
 > - download the LTS installer from <https://nodejs.org>, **or**
 > - if you use nvm-windows: `nvm install lts` then `nvm use lts`.
-> Re-check with `node --version` (want ≥ 22.15), then `pnpm install`.
+>   Re-check with `node --version` (want ≥ 22.15), then `pnpm install`.
 
 Install dependencies:
 
@@ -73,6 +74,7 @@ database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"   <-- copy this
 ```
 
 Open **`wrangler.jsonc`** and paste the ids:
+
 - put the **dev** id in the top-level `d1_databases[0].database_id`
   (replaces `REPLACE_WITH_DEV_DATABASE_ID`);
 - put the **prod** id in `env.production.d1_databases[0].database_id`
@@ -88,7 +90,7 @@ Used later (Phase 3) for long-term SQL-dump backups.
 npx wrangler r2 bucket create ash-overseas-backups
 ```
 
-> R2 requires enabling R2 once in the dashboard (Dashboard → R2 → *Enable*). It has a
+> R2 requires enabling R2 once in the dashboard (Dashboard → R2 → _Enable_). It has a
 > generous free tier. If you are not ready for backups yet, you may skip this and
 > remove the `r2_buckets` blocks from `wrangler.jsonc` until Phase 3.
 
@@ -157,7 +159,7 @@ Do this when you reach Phase 3 (see `CLAUDE.md` → Security Blueprint L1).
 ## 8. Optional — Drizzle Studio against remote D1
 
 To browse the remote database with `pnpm db:studio`, create a scoped API token
-(Dashboard → My Profile → API Tokens → Create → *D1 read/write* for this account) and
+(Dashboard → My Profile → API Tokens → Create → _D1 read/write_ for this account) and
 put these in `.dev.vars`:
 
 ```

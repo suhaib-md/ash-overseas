@@ -1,62 +1,108 @@
-:root {
-  --bg: #0f172a;
-  --fg: #e2e8f0;
-  --muted: #94a3b8;
-  --accent: #38bdf8;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
-  line-height: 1.5;
+@import 'tailwindcss';
+
+/*
+ * ASH Overseas — Design System (single source of truth).
+ * See DESIGN_SYSTEM.md for the written guide. Every colour/type/spacing token the
+ * app uses is defined here and generates a Tailwind utility (bg-*, text-*, p-*, …).
+ * Light, clean, "institutional" Material-3 language. Never hard-code hex in components.
+ */
+@theme {
+  /* ---------- Typeface (Inter, self-hosted via @fontsource-variable/inter) ---------- */
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* ---------- Brand + core palette ---------- */
+  --color-primary: #091426; /* deep institutional navy — brand, primary actions, headings */
+  --color-on-primary: #ffffff;
+  --color-primary-container: #1e293b;
+  --color-on-primary-container: #d8e3fb;
+
+  --color-secondary: #5b5e67;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #dfe2ed;
+  --color-on-secondary-container: #3f424b;
+
+  /* ---------- Surfaces (soft-white with a faint blue tint) ---------- */
+  --color-background: #f8f9ff;
+  --color-surface: #f8f9ff;
+  --color-surface-bright: #ffffff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eff4ff;
+  --color-surface-container: #e5eeff;
+  --color-surface-container-high: #dce9ff;
+  --color-surface-container-highest: #d3e4fe;
+
+  --color-on-surface: #0b1c30; /* primary text */
+  --color-on-surface-variant: #45474c; /* secondary text, labels */
+
+  --color-outline: #75777d;
+  --color-outline-variant: #c5c6cd;
+
+  /* ---------- Semantic: balance direction ----------
+     ALWAYS pair these with an icon + words (see DESIGN_SYSTEM.md "never colour alone"). */
+  --color-positive: #0f7b4d; /* "Dealer owes you" — a receivable */
+  --color-on-positive: #ffffff;
+  --color-positive-container: #c9f2dc;
+  --color-on-positive-container: #06301d;
+
+  --color-negative: #ba1a1a; /* "You owe dealer" — a payable */
+  --color-on-negative: #ffffff;
+  --color-negative-container: #ffdad6;
+  --color-on-negative-container: #410002;
+
+  --color-neutral: #5b5e67; /* "Settled" */
+
+  /* ---------- Named spacing (design vocabulary; numeric p-1/p-2/… still available) ---------- */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 40px;
+
+  /* ---------- Typography scale ---------- */
+  --text-display-lg: 32px;
+  --text-display-lg--line-height: 40px;
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-lg--font-weight: 700;
+
+  --text-headline-md: 24px;
+  --text-headline-md--line-height: 32px;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 600;
+
+  --text-headline-sm: 20px;
+  --text-headline-sm--line-height: 28px;
+  --text-headline-sm--font-weight: 600;
+
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+
+  --text-body-md: 14px;
+  --text-body-md--line-height: 20px;
+
+  --text-label-caps: 12px;
+  --text-label-caps--line-height: 16px;
+  --text-label-caps--letter-spacing: 0.05em;
+  --text-label-caps--font-weight: 600;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  min-height: 100dvh;
-  background: var(--bg);
-  color: var(--fg);
+/* ---------- Base ---------- */
+html {
+  color-scheme: light;
   -webkit-text-size-adjust: 100%;
 }
 
-.shell {
-  max-width: 32rem;
-  margin: 0 auto;
-  padding: max(1.5rem, env(safe-area-inset-top)) 1.25rem 2rem;
-}
-
-h1 {
+body {
   margin: 0;
-  font-size: 1.75rem;
-  letter-spacing: -0.02em;
+  min-height: 100dvh;
+  background-color: var(--color-surface);
+  color: var(--color-on-surface);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.tagline {
-  margin: 0.25rem 0 1.5rem;
-  color: var(--muted);
-}
-
-.checks {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.5rem 1rem;
-  padding: 1rem;
-  border: 1px solid #1e293b;
-  border-radius: 0.75rem;
-  background: #0b1220;
-}
-
-.checks dt {
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.checks dd {
-  margin: 0;
+/* Money and any tabular figures must line up column-to-column. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
 }

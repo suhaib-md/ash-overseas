@@ -271,6 +271,8 @@ Unauthorized read of financial data (→ Access + JWT verify + no public route);
 
 The owner enters records on a phone, on the move, often in a hurry. The interface must be fast, unambiguous about money direction, and hard to fat-finger into a wrong figure. Builds on the UI Rules above.
 
+**Visual foundation:** the concrete theme is the **[Design System](DESIGN_SYSTEM.md)** — a light, clean, institutional Material-3 language. Tokens (colours incl. the semantic `positive`/`negative`/`neutral` balance pairs, typography, named spacing) live in `src/index.css` (`@theme`, Tailwind v4) and are the **single source of truth** — never hard-code hex/px in components. Inter is self-hosted (`@fontsource-variable/inter`); icons are `lucide-react`; no CDNs/external fonts (CSP). The mockups' visual language was adopted mobile-first; their out-of-scope features (analytics dashboard, CSV/email/PDF export, exchange rates, notifications, uploads) were **not** — see the Design System's exclusions.
+
 ### Principles
 
 - **Mobile-first, thumb-first.** Design for a 360px-wide phone first; desktop is the enhancement. Primary actions (add transaction, add money) sit within thumb reach with large tap targets (≥44px).
