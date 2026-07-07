@@ -232,7 +232,6 @@ export interface ReplayEntry {
   entryDate: number; // epoch (seconds or ms) — ordering only
   debitPaise: number;
   creditPaise: number;
-  isVoided?: boolean;
 }
 
 export interface ReplayedEntry extends ReplayEntry {
@@ -240,9 +239,12 @@ export interface ReplayedEntry extends ReplayEntry {
 }
 
 /**
- * Replay all non-voided entries for one account in deterministic (entry_date, id)
+ * Replay ALL ledger entries for one account in deterministic (entry_date, id)
  * order and recompute running balances from the opening balance (or zero).
- * Called after any void to restore correct balances (SRS §13.2).
+ *
+ * Entries are never skipped: a void is represented by an appended, equal-and-opposite
+ * reversing entry that itself counts in the balance (SRS §13.4). Callers pass every
+ * ledger row (originals + reversals). Used to verify/repair stored running balances.
  */
 export function recomputeLedger(
   entries: readonly ReplayEntry[],
@@ -250,7 +252,7 @@ export function recomputeLedger(
   openingBalancePaise = 0,
 ): ReplayedEntry[] {
   const ordered = entries
-    .filter((e) => e.account === account && !e.isVoided)
+    .filter((e) => e.account === account)
     .slice()
     .sort((a, b) => a.entryDate - b.entryDate || a.id - b.id);
 

@@ -192,15 +192,16 @@ describe('recomputeLedger — replay & void', () => {
     ]);
   });
 
-  it('voiding an entry restores the exact pre-entry balance on replay', () => {
+  it('a void appends an equal-and-opposite reversal that neutralises the original', () => {
+    // Void entry id2 (a −300 credit) by APPENDING its reversal (a +300 debit).
+    // Nothing is skipped — the original stays and the reversal cancels it (SRS §13.4).
     const withReversal: ReplayEntry[] = [
-      ...entries.map((e) => (e.id === 2 ? { ...e, isVoided: true } : e)),
-      // reversing entry for the voided credit of 300 → a debit of 300
+      ...entries,
       { id: 5, account: 'actual', entryDate: 40, debitPaise: R(300), creditPaise: 0 },
     ];
-    // 1000, (300 voided), 1500, +300 reversal → 1000, 1500, 1800
-    expect(balanceOf(withReversal, 'actual')).toBe(R(1800));
-    // and the source's own reversal via reversePosting is equal & opposite
+    // 1000, 700, 1200, +300 reversal → 1500 (as if the −300 credit never happened)
+    expect(balanceOf(withReversal, 'actual')).toBe(R(1500));
+    // reversePosting produces that equal-and-opposite entry
     const original = {
       account: 'actual' as const,
       debitPaise: 0,
