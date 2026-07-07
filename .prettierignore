@@ -1,0 +1,5 @@
+dist
+.wrangler
+migrations
+pnpm-lock.yaml
+coverage

@@ -1,0 +1,14 @@
+# Local-only secrets for `vite dev` / `wrangler dev`.
+# Copy this file to `.dev.vars` (which is gitignored) and fill in as needed.
+# NEVER commit real secrets. Production secrets are set with `wrangler secret put`.
+#
+# Phase 0 needs none of these. They become relevant later:
+#
+# --- Optional: drizzle-kit studio against remote D1 (Phase 0.5+) ---
+# CLOUDFLARE_ACCOUNT_ID=""
+# CLOUDFLARE_DATABASE_ID=""
+# CLOUDFLARE_D1_TOKEN=""
+#
+# --- Phase 3: Cloudflare Access JWT verification ---
+# CF_ACCESS_TEAM_DOMAIN=""   # e.g. your-team.cloudflareaccess.com
+# CF_ACCESS_AUD=""           # the Access application's Application Audience (AUD) tag

@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Cloudflare / Wrangler local state
+.wrangler/
+
+# Local secrets — NEVER commit (see .dev.vars.example)
+.dev.vars
+.env
+.env.*
+!.env.example
+
+# Test / coverage
+coverage/
+
+# Local SQLite artifacts
+*.sqlite
+*.sqlite-*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.local
+
+# Claude Code local settings (session-recorded permissions, not project config)
+.claude/

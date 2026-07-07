@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "noUnusedLocals": false
+  },
+  "include": ["vite.config.ts", "vitest.config.ts", "drizzle.config.ts"]
+}
