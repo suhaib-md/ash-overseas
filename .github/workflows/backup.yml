@@ -1,0 +1,40 @@
+name: Backup (D1 export)
+
+# Card-free off-store backup: exports the prod D1 to a SQL dump and keeps it as a
+# downloadable artifact (90-day retention). Opt-in — does nothing until you add the
+# CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID repo secrets (see SETUP.md → Backups).
+on:
+  schedule:
+    - cron: '30 18 * * 0' # weekly, Sunday ~00:00 IST
+  workflow_dispatch: {}
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Export prod D1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "No CLOUDFLARE_API_TOKEN secret — skipping (add it + CLOUDFLARE_ACCOUNT_ID to enable)."
+            exit 0
+          fi
+          pnpm exec wrangler d1 export ash-overseas-prod --remote --output backup.sql
+      - name: Upload dump artifact
+        if: ${{ hashFiles('backup.sql') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: d1-backup-${{ github.run_id }}
+          path: backup.sql
+          retention-days: 90

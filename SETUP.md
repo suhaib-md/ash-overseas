@@ -82,17 +82,10 @@ Open **`wrangler.jsonc`** and paste the ids:
 
 ---
 
-## 3. Create the backup bucket (R2)
+## 3. Backups — no setup needed here
 
-Used later (Phase 3) for long-term SQL-dump backups.
-
-```sh
-npx wrangler r2 bucket create ash-overseas-backups
-```
-
-> R2 requires enabling R2 once in the dashboard (Dashboard → R2 → _Enable_). It has a
-> generous free tier. If you are not ready for backups yet, you may skip this and
-> remove the `r2_buckets` blocks from `wrangler.jsonc` until Phase 3.
+Backups are **card-free** (no R2): D1 Time Travel + `pnpm db:export`. See
+[Backups & restore](#backups--restore) below. Nothing to provision at this step.
 
 ---
 
@@ -174,38 +167,43 @@ CLOUDFLARE_D1_TOKEN="..."
 
 ## Backups & restore
 
-Two independent layers (NFR-B1/B2/B3):
+**Card-free — no R2, no payment method.** Two independent layers (NFR-B1/B2/B3):
 
 ### 1. Time Travel — 30-day point-in-time recovery (built in, no setup)
 
+The primary safety net. Instantly restore the live DB to any moment in the last 30 days:
+
 ```sh
-# See the current bookmark, or a bookmark at a timestamp:
 npx wrangler d1 time-travel info ash-overseas-prod --env production
-# Restore the DB to a moment (last 30 days):
 npx wrangler d1 time-travel restore ash-overseas-prod --env production --timestamp="2026-07-08T09:00:00Z"
 ```
 
-### 2. Off-store SQL dumps in R2 (long-term retention)
+### 2. SQL dumps for long-term / off-store retention
 
-The production Worker runs a **nightly cron** (`triggers.crons` in `wrangler.jsonc`) that writes a
-full `INSERT`-statement SQL dump to the R2 bucket under `backups/<timestamp>.sql`. Requires the
-bucket (SETUP.md §3) and `wrangler deploy --env production`.
-
-```sh
-# List / download dumps:
-npx wrangler r2 object list ash-overseas-backups --prefix backups/
-npx wrangler r2 object get ash-overseas-backups backups/<timestamp>.sql --file restore.sql
-```
-
-**Restore a dump into a scratch DB (verify before trusting it):**
+Export the whole prod DB to a `.sql` file (schema + data) whenever you like, and keep it wherever
+you keep important files (Google Drive, an external drive, a private repo):
 
 ```sh
-npx wrangler d1 create ash-overseas-restore-check          # scratch DB
-npx wrangler d1 migrations apply ash-overseas-restore-check --remote   # create the schema
-npx wrangler d1 execute ash-overseas-restore-check --remote --file restore.sql
-# Spot-check row counts / a known dealer balance, then delete the scratch DB when done.
+pnpm db:export        # → writes ./backup.sql (gitignored). Rename/move it, e.g. ash-2026-07-08.sql
 ```
 
-> ⚠️ **Perform and verify a restore at least once before handoff** (NFR-B3). The dump is data-only
-> (`INSERT`s); apply migrations first so the tables exist. To restore over an existing DB, clear
-> the tables first or prefer Time Travel.
+Automate it with **Windows Task Scheduler** (run `pnpm db:export` weekly), **or** turn on the
+opt-in GitHub Action (`.github/workflows/backup.yml`), which keeps each dump as a downloadable
+artifact (90-day retention). To enable the Action, add two repo secrets
+(GitHub → repo → Settings → Secrets and variables → Actions):
+
+- `CLOUDFLARE_ACCOUNT_ID` — your account id (dashboard URL, or `wrangler whoami`)
+- `CLOUDFLARE_API_TOKEN` — a token scoped to **D1 : Read** (My Profile → API Tokens → Create)
+
+### Restore a dump into a scratch DB (verify before trusting it — NFR-B3)
+
+```sh
+npx wrangler d1 create ash-overseas-restore-check
+# The dump already contains CREATE TABLE + INSERT, so load it straight into the empty DB
+# (do NOT apply migrations first — that would collide with the dump's schema):
+npx wrangler d1 execute ash-overseas-restore-check --remote --file backup.sql
+npx wrangler d1 execute ash-overseas-restore-check --remote --command "SELECT count(*) FROM dealers;"
+npx wrangler d1 delete ash-overseas-restore-check                      # clean up
+```
+
+> ⚠️ **Perform and verify a restore at least once before handoff.**

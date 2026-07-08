@@ -20,6 +20,11 @@ coverage/
 *.sqlite
 *.sqlite-*
 
+# DB dumps (financial data — never commit; migrations/*.sql stay tracked)
+/backup.sql
+/restore.sql
+/backups/
+
 # OS / editor
 .DS_Store
 Thumbs.db

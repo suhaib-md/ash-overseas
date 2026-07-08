@@ -55,7 +55,7 @@ shared/    Pure, DB-free logic shared by client + worker:
              schemas.ts (Zod). This is where correctness lives — Section 6 tests exercise it.
 worker/    Cloudflare Worker: index.ts (Hono routes + middleware), db/ (Drizzle schema+client),
              ledger/post.ts (atomic db.batch posting layer), repo/ (dealers, ledger, transactions,
-             audit), auth.ts (Access JWT), backup.ts (R2 dump).
+             audit), auth.ts (Access JWT).
 src/       React SPA: components/, features/ (DealerList, DealerDetail, forms, AuditLog), lib/api.ts.
 migrations/  Drizzle-generated SQL (applied by wrangler).
 ```
@@ -68,7 +68,7 @@ the source voided — nothing is hard-deleted. Every event's rows commit in a si
 
 `pnpm test` runs the pure engine tests — the four SRS §6 acceptance scenarios reproduce exact
 figures. `pnpm test:d1` runs the same through a real local D1 (Miniflare) plus the full HTTP API
-(validation, CSRF, auth gate, void, GST split, backup). CI (`.github/workflows/ci.yml`) runs
+(validation, CSRF, auth gate, void, GST split). CI (`.github/workflows/ci.yml`) runs
 typecheck + both suites + build + `pnpm audit` on every push/PR.
 
 ## Security
@@ -88,8 +88,8 @@ typecheck + both suites + build + `pnpm audit` on every push/PR.
 - **Deploy prod:** `wrangler deploy --env production` (after `pnpm db:migrate:prod`). First-time
   Cloudflare setup (D1, R2, Access) is in [SETUP.md](SETUP.md).
 - **Run everything:** `pnpm test:all && pnpm typecheck && pnpm build`.
-- **Backups/restore:** nightly R2 SQL dump + D1 Time Travel — commands and the verified restore
-  procedure are in [SETUP.md → Backups & restore](SETUP.md).
+- **Backups/restore:** D1 Time Travel + `pnpm db:export` SQL dumps (card-free, no R2) — commands
+  and the verified restore procedure are in [SETUP.md → Backups & restore](SETUP.md).
 - **Correct a mistake (void):** open the dealer → the entry's ⃠ button → confirm. This posts a
   reversing entry and marks the source voided; the audit log records it. Never edit a posted
   ledger row directly.

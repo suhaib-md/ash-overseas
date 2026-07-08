@@ -9,9 +9,9 @@ Cloudflare/GitHub accounts, so it can't be scripted for you.
 > fine while it's empty.
 
 Facts you'll reuse:
+
 - Repo: `github.com/suhaib-md/ash-overseas`
 - Prod Worker name: `ash-overseas-prod` · prod D1: `ash-overseas-prod` (`7385f774-…`)
-- Backup bucket (to create): `ash-overseas-backups`
 
 ---
 
@@ -25,27 +25,13 @@ pnpm install && pnpm test:all && pnpm build   # everything green
 
 ---
 
-## 2 (do first, it blocks the deploy) — Backups: enable R2 + create the bucket
-
-The prod config references the `ash-overseas-backups` bucket, so it must exist **before** you
-deploy, or the deploy fails.
-
-1. Dashboard → **R2** (dash.cloudflare.com → R2 Object Storage) → **Enable R2**. This asks for a
-   payment card even though usage is free-tier; add it.
-2. Create the bucket:
-   ```sh
-   npx wrangler r2 bucket create ash-overseas-backups
-   ```
-3. That's it — the nightly backup cron is already in `wrangler.jsonc` (prod env) and activates on
-   the deploy in Step 1.
-
----
-
 ## Step 1 — Deploy production
+
+(Backups need **no provisioning** — they're card-free: Time Travel + `pnpm db:export`. See Step 3.)
 
 ```sh
 pnpm db:migrate:prod                       # create the schema in the prod D1 (answer "yes")
-npx wrangler deploy --env production        # deploys the Worker + SPA + cron
+npx wrangler deploy --env production        # deploys the Worker + SPA
 ```
 
 Wrangler prints a URL like `https://ash-overseas-prod.<your-subdomain>.workers.dev`. Open it —
@@ -82,6 +68,7 @@ Zero Trust → **Settings → Authentication → Login methods** → ensure **On
 ### 1d. Create the Access application
 
 Zero Trust → **Access → Applications → Add an application → Self-hosted**.
+
 - **Application name:** ASH Overseas
 - **Session duration:** e.g. 24 hours (forces re-auth daily — good for a phone)
 - **Public hostname:** `ledger.yourdomain.com` (from 1a)
@@ -113,26 +100,25 @@ Zero Trust → **Access → Applications → Add an application → Self-hosted*
 
 ---
 
-## 3 — Verify a restore (do it once, for real)
+## 3 — Backups (card-free) + verify a restore once
 
-Prove the backups actually restore before you rely on them.
+No R2, no card. Two layers:
+
+- **Time Travel** (instant, built-in): restore the live DB to any moment in the last 30 days —
+  `npx wrangler d1 time-travel restore ash-overseas-prod --env production --timestamp="<ISO>"`.
+- **SQL dumps** for long-term/off-store: run `pnpm db:export` (writes `backup.sql`) and keep it in
+  Drive / an external drive / a private repo. Automate with Windows Task Scheduler or the opt-in
+  `.github/workflows/backup.yml` (add `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` repo secrets).
+
+**Prove a restore works, once:**
 
 ```sh
-# 1. Trigger a backup now (or wait for the nightly cron), then list dumps:
-npx wrangler r2 object list ash-overseas-backups --prefix backups/
-# 2. Download the latest dump:
-npx wrangler r2 object get ash-overseas-backups backups/<timestamp>.sql --file restore.sql
-# 3. Restore into a throwaway DB and check it:
+pnpm db:export                                   # → backup.sql (schema + data)
 npx wrangler d1 create ash-overseas-restore-check
-npx wrangler d1 migrations apply ash-overseas-restore-check --remote
-npx wrangler d1 execute ash-overseas-restore-check --remote --file restore.sql
+npx wrangler d1 execute ash-overseas-restore-check --remote --file backup.sql   # no migrations — dump has schema
 npx wrangler d1 execute ash-overseas-restore-check --remote --command "SELECT count(*) FROM dealers;"
-# 4. Looks right? Clean up:
 npx wrangler d1 delete ash-overseas-restore-check
 ```
-
-Also note the instant option: **Time Travel** restores the live DB to any moment in the last 30 days —
-`npx wrangler d1 time-travel restore ash-overseas-prod --env production --timestamp="<ISO>"`.
 
 ---
 
@@ -162,5 +148,6 @@ Also note the instant option: **Time Travel** restores the live DB to any moment
 ---
 
 ### Quick order recap
-R2 bucket → deploy prod → custom domain → Access app + secrets + redeploy → verify a restore →
+
+deploy prod → custom domain → Access app + secrets + redeploy → verify a restore (`pnpm db:export`) →
 headers scan + WAF → invite maintainer. **Don't enter real data until Access is verified.**

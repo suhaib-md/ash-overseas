@@ -25,10 +25,8 @@
     },
   ],
 
-  // R2 bucket for off-store SQL-dump backups. Create it before deploying:
-  // enable R2 in the dashboard, then `wrangler r2 bucket create ash-overseas-backups`.
-  // Local dev uses an emulated bucket automatically.
-  "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "ash-overseas-backups" }],
+  // Backups are card-free: D1 Time Travel (30-day PITR) + `pnpm db:export` SQL dumps
+  // (optionally automated by .github/workflows/backup.yml). See SETUP.md → Backups & restore.
 
   // --- PRODUCTION env: `wrangler deploy --env production` ---
   "env": {
@@ -47,9 +45,6 @@
           "migrations_dir": "migrations",
         },
       ],
-      "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "ash-overseas-backups" }],
-      // Nightly backup to R2 (00:00 IST ≈ 18:30 UTC).
-      "triggers": { "crons": ["30 18 * * *"] },
     },
   },
 }

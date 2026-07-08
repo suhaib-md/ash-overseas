@@ -16,11 +16,9 @@ import { getTransactionDetail, getSuggestions } from './repo/transactions';
 import { getAuditLog } from './repo/audit';
 import { postTransaction, postMovement, voidSource } from './ledger/post';
 import { verifyAccessJwt } from './auth';
-import { runBackup } from './backup';
 
 export interface Env {
   DB: D1Database;
-  BACKUPS?: R2Bucket; // Phase 3 backups — bound in production (bucket created per SETUP.md)
   // Set in production (wrangler secret) → enables Access JWT verification. Unset = local dev.
   CF_ACCESS_TEAM_DOMAIN?: string;
   CF_ACCESS_AUD?: string;
@@ -218,10 +216,4 @@ app.post('/api/movements/:id/void', async (c) => {
 
 app.notFound((c) => c.json({ ok: false, error: 'not_found' }, 404));
 
-export default {
-  fetch: (request: Request, env: Env, ctx?: ExecutionContext) => app.fetch(request, env, ctx),
-  // Cron-triggered off-store backup to R2 (see wrangler.jsonc triggers.crons).
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
-    if (env.BACKUPS) ctx.waitUntil(runBackup({ DB: env.DB, BACKUPS: env.BACKUPS }));
-  },
-} satisfies ExportedHandler<Env>;
+export default app;
