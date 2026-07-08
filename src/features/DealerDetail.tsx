@@ -14,7 +14,15 @@ import { AddMoneyForm, AddTransactionForm } from './forms';
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-export function DealerDetail({ dealerId, onBack }: { dealerId: number; onBack: () => void }) {
+export function DealerDetail({
+  dealerId,
+  onBack,
+  autoOpen,
+}: {
+  dealerId: number;
+  onBack: () => void;
+  autoOpen?: 'txn' | 'money';
+}) {
   const [account, setAccount] = useState<AccountName>('actual');
   const [dealer, setDealer] = useState<Dealer | null>(null);
   const [balances, setBalances] = useState<{
@@ -45,6 +53,9 @@ export function DealerDetail({ dealerId, onBack }: { dealerId: number; onBack: (
 
   useEffect(loadHeader, [loadHeader]);
   useEffect(loadLedger, [loadLedger]);
+  useEffect(() => {
+    if (autoOpen) setModal(autoOpen);
+  }, [autoOpen, dealerId]);
 
   function afterWrite() {
     setModal(null);

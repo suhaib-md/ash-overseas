@@ -1,37 +1,35 @@
-import { useState } from 'react';
-import { AppShell, type NavId } from './components/AppShell';
+import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router';
+import { ShellLayout } from './components/AppShell';
+import { Home } from './features/Home';
 import { DealerList } from './features/DealerList';
 import { DealerDetail } from './features/DealerDetail';
 
-const TITLES: Record<NavId, string> = {
-  home: 'Home',
-  purchase: 'Purchase',
-  sale: 'Sale',
-  dealers: 'Dealers',
-};
-const ACTIVITY: Record<NavId, 'all' | 'purchase' | 'sale'> = {
-  home: 'all',
-  purchase: 'purchase',
-  sale: 'sale',
-  dealers: 'all',
-};
-
 export function App() {
-  const [nav, setNav] = useState<NavId>('home');
-  const [dealerId, setDealerId] = useState<number | null>(null);
-
-  function navigate(id: NavId) {
-    setNav(id);
-    setDealerId(null);
-  }
-
   return (
-    <AppShell active={nav} onNavigate={navigate} title={dealerId != null ? 'Dealer' : TITLES[nav]}>
-      {dealerId != null ? (
-        <DealerDetail dealerId={dealerId} onBack={() => setDealerId(null)} />
-      ) : (
-        <DealerList activity={ACTIVITY[nav]} onOpen={setDealerId} />
-      )}
-    </AppShell>
+    <Routes>
+      <Route element={<ShellLayout />}>
+        <Route path="/" element={<Home />} />
+        <Route path="/purchase" element={<DealerListPage activity="purchase" />} />
+        <Route path="/sale" element={<DealerListPage activity="sale" />} />
+        <Route path="/dealers" element={<DealerListPage activity="all" />} />
+        <Route path="/dealers/:id" element={<DealerDetailPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
   );
+}
+
+function DealerListPage({ activity }: { activity: 'all' | 'purchase' | 'sale' }) {
+  const navigate = useNavigate();
+  return <DealerList activity={activity} onOpen={(id) => navigate(`/dealers/${id}`)} />;
+}
+
+function DealerDetailPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const dealerId = Number(id);
+  if (!Number.isInteger(dealerId) || dealerId <= 0) return <Navigate to="/dealers" replace />;
+  const autoOpen = (location.state as { openTxn?: boolean } | null)?.openTxn ? 'txn' : undefined;
+  return <DealerDetail dealerId={dealerId} onBack={() => navigate(-1)} autoOpen={autoOpen} />;
 }

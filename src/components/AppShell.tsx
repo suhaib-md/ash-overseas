@@ -1,32 +1,48 @@
-import { type ReactNode } from 'react';
+import { useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { Landmark, Home, ShoppingCart, Tag, Users, Plus, type LucideIcon } from 'lucide-react';
+import { DealerPicker } from '../features/DealerPicker';
 
-export type NavId = 'home' | 'purchase' | 'sale' | 'dealers';
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  end?: boolean;
+}
 
-const NAV: { id: NavId; label: string; icon: LucideIcon }[] = [
-  { id: 'home', label: 'Home', icon: Home },
-  { id: 'purchase', label: 'Purchase', icon: ShoppingCart },
-  { id: 'sale', label: 'Sale', icon: Tag },
-  { id: 'dealers', label: 'Dealers', icon: Users },
+const NAV: NavItem[] = [
+  { to: '/', label: 'Home', icon: Home, end: true },
+  { to: '/purchase', label: 'Purchase', icon: ShoppingCart },
+  { to: '/sale', label: 'Sale', icon: Tag },
+  { to: '/dealers', label: 'Dealers', icon: Users },
 ];
 
+function titleFor(pathname: string): string {
+  if (pathname === '/') return 'Home';
+  if (pathname.startsWith('/purchase')) return 'Purchase';
+  if (pathname.startsWith('/sale')) return 'Sale';
+  if (pathname.startsWith('/dealers/')) return 'Dealer';
+  if (pathname.startsWith('/dealers')) return 'Dealers';
+  return '';
+}
+
 /**
- * Responsive application shell.
- *  - Desktop (lg+): persistent left sidebar + wide content area — a native web app.
- *  - Mobile: top bar with brand + a thumb-reachable bottom tab bar — a native mobile app.
- * Navigation is local state for now (chrome only); real routing arrives in Phase 2.
+ * Responsive application shell (route-aware).
+ *  - Desktop (lg+): persistent left sidebar + wide content — a native web app.
+ *  - Mobile: top bar + thumb-reachable bottom tab bar — a native mobile app.
  */
-export function AppShell({
-  active,
-  onNavigate,
-  title,
-  children,
-}: {
-  active: NavId;
-  onNavigate: (id: NavId) => void;
-  title: string;
-  children: ReactNode;
-}) {
+export function ShellLayout() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [pickDealer, setPickDealer] = useState(false);
+
+  // "New transaction" needs a dealer first → pick one, then jump into its detail
+  // with the transaction form open.
+  function startNewTransaction(dealerId: number) {
+    setPickDealer(false);
+    navigate(`/dealers/${dealerId}`, { state: { openTxn: true } });
+  }
+
   return (
     <div className="flex min-h-dvh bg-surface text-on-surface">
       {/* Sidebar — desktop only */}
@@ -36,17 +52,13 @@ export function AppShell({
         </div>
         <nav className="flex-1 space-y-1 px-3">
           {NAV.map((item) => (
-            <SideLink
-              key={item.id}
-              item={item}
-              active={active === item.id}
-              onClick={() => onNavigate(item.id)}
-            />
+            <SideLink key={item.to} item={item} />
           ))}
         </nav>
         <div className="p-3">
           <button
             type="button"
+            onClick={() => setPickDealer(true)}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-label-caps font-semibold text-on-primary transition-opacity hover:opacity-90"
           >
             <Plus size={18} />
@@ -57,14 +69,16 @@ export function AppShell({
 
       {/* Main column */}
       <div className="flex min-h-dvh flex-1 flex-col">
-        {/* Top app bar */}
         <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-outline-variant bg-surface-bright px-4 lg:px-8">
           <div className="lg:hidden">
             <Brand compact />
           </div>
-          <h1 className="hidden text-headline-sm text-primary lg:block">{title}</h1>
+          <h1 className="hidden text-headline-sm text-primary lg:block">
+            {titleFor(location.pathname)}
+          </h1>
           <button
             type="button"
+            onClick={() => setPickDealer(true)}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-label-caps font-semibold text-on-primary transition-opacity hover:opacity-90"
           >
             <Plus size={16} />
@@ -72,8 +86,9 @@ export function AppShell({
           </button>
         </header>
 
-        {/* Page content — fills the available width */}
-        <main className="flex-1 p-4 pb-24 lg:p-8 lg:pb-8">{children}</main>
+        <main className="flex-1 p-4 pb-24 lg:p-8 lg:pb-8">
+          <Outlet />
+        </main>
 
         {/* Bottom tab bar — mobile only */}
         <nav
@@ -81,15 +96,14 @@ export function AppShell({
           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
           {NAV.map((item) => (
-            <TabLink
-              key={item.id}
-              item={item}
-              active={active === item.id}
-              onClick={() => onNavigate(item.id)}
-            />
+            <TabLink key={item.to} item={item} />
           ))}
         </nav>
       </div>
+
+      {pickDealer && (
+        <DealerPicker onPick={startNewTransaction} onClose={() => setPickDealer(false)} />
+      )}
     </div>
   );
 }
@@ -108,60 +122,50 @@ function Brand({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function SideLink({
-  item,
-  active,
-  onClick,
-}: {
-  item: { label: string; icon: LucideIcon };
-  active: boolean;
-  onClick: () => void;
-}) {
+function SideLink({ item }: { item: NavItem }) {
   const Icon = item.icon;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={active ? 'page' : undefined}
-      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-body-md transition-colors ${
-        active
-          ? 'bg-surface-container font-semibold text-primary'
-          : 'font-medium text-on-surface-variant hover:bg-surface-container-low'
-      }`}
+    <NavLink
+      to={item.to}
+      end={item.end}
+      className={({ isActive }) =>
+        `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-body-md transition-colors ${
+          isActive
+            ? 'bg-surface-container font-semibold text-primary'
+            : 'font-medium text-on-surface-variant hover:bg-surface-container-low'
+        }`
+      }
     >
       <Icon size={20} />
       {item.label}
-    </button>
+    </NavLink>
   );
 }
 
-function TabLink({
-  item,
-  active,
-  onClick,
-}: {
-  item: { label: string; icon: LucideIcon };
-  active: boolean;
-  onClick: () => void;
-}) {
+function TabLink({ item }: { item: NavItem }) {
   const Icon = item.icon;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-current={active ? 'page' : undefined}
-      className={`flex flex-col items-center gap-1 py-2 text-[11px] transition-colors ${
-        active ? 'font-semibold text-primary' : 'font-medium text-on-surface-variant'
-      }`}
+    <NavLink
+      to={item.to}
+      end={item.end}
+      className={({ isActive }) =>
+        `flex flex-col items-center gap-1 py-2 text-[11px] transition-colors ${
+          isActive ? 'font-semibold text-primary' : 'font-medium text-on-surface-variant'
+        }`
+      }
     >
-      <span
-        className={`grid h-8 w-14 place-items-center rounded-full transition-colors ${
-          active ? 'bg-surface-container-high' : ''
-        }`}
-      >
-        <Icon size={21} />
-      </span>
-      {item.label}
-    </button>
+      {({ isActive }) => (
+        <>
+          <span
+            className={`grid h-8 w-14 place-items-center rounded-full transition-colors ${
+              isActive ? 'bg-surface-container-high' : ''
+            }`}
+          >
+            <Icon size={21} />
+          </span>
+          {item.label}
+        </>
+      )}
+    </NavLink>
   );
 }
