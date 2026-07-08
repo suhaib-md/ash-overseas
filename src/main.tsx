@@ -18,3 +18,12 @@ createRoot(rootEl).render(
     </BrowserRouter>
   </StrictMode>,
 );
+
+// Register the app-shell service worker (production only; never in dev).
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* SW registration is best-effort */
+    });
+  });
+}

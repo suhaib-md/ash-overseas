@@ -1,0 +1,12 @@
+{
+  "name": "ASH Overseas — Trading Ledger",
+  "short_name": "ASH Ledger",
+  "description": "Private trading ledger for ASH Overseas — dual-valuation dealer accounts.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8f9ff",
+  "theme_color": "#f8f9ff",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
