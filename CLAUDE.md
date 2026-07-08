@@ -11,7 +11,7 @@ The full specification lives in `SRS.md`. When in doubt about any business rule,
 - **Phase 0** (foundations & setup) — ✅ complete
 - **Phase 1** (core ledger) — ✅ complete: pure engine + atomic posting layer + dealer/transaction/money-movement APIs + minimal dealer-detail UI. Section 6 passes at both the pure and D1-integration level (55 tests green).
 - **Phase 2** (usability/completeness) — ✅ complete: real routing + Home/nav; full entry flows with draft persistence; void UI (reversal shown); per-transaction GST split (CGST/SGST vs IGST) + round-off; success toasts, item/unit autocomplete, modal a11y, installable PWA (shell-only cache). 59 tests green (43 unit + 16 D1/API).
-- **Phase 3** (auth/hardening/handoff) — next
+- **Phase 3** (auth/hardening/handoff) — code-complete: Access-JWT verification + security headers (CSP/HSTS), nightly D1→R2 backup Worker + documented restore, in-app audit-log view, CI (typecheck/tests/build/audit) + Dependabot, README + maintainer runbook. 63 tests green. **Remaining is owner/maintainer provisioning** (create the Cloudflare Access app, create the R2 bucket + deploy, run an observatory scan, perform+verify a restore, invite the maintainer, set WAF/rate-limit rules) — all documented in SETUP.md / README.md.
 
 The detailed, sequenced build plan (sub-phases, steps, and "Done when" gates) is in **[Delivery Plan (Detailed)](#delivery-plan-detailed)** at the end of this file. Cross-cutting engineering, security, and UI/UX rules live in their own sections and are referenced from the phases.
 
