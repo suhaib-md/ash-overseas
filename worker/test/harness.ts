@@ -19,6 +19,7 @@ const migrationsFolder = path.join(
 
 export interface TestHarness {
   d1: D1Database;
+  r2: R2Bucket;
   db: Db;
   reset(): Promise<void>;
   dispose(): Promise<void>;
@@ -31,13 +32,16 @@ export async function createHarness(): Promise<TestHarness> {
     script: 'export default { fetch() { return new Response("ok"); } };',
     compatibilityDate: '2026-07-07',
     d1Databases: { DB: 'ash-test' },
+    r2Buckets: ['BACKUPS'],
   });
   const d1 = (await mf.getD1Database('DB')) as unknown as D1Database;
+  const r2 = (await mf.getR2Bucket('BACKUPS')) as unknown as R2Bucket;
   const db = getDb(d1);
   await migrate(db, { migrationsFolder });
 
   return {
     d1,
+    r2,
     db,
     async reset() {
       await db.batch([

@@ -172,9 +172,40 @@ CLOUDFLARE_D1_TOKEN="..."
 
 ---
 
-## Backups & restore (Phase 3 — will be expanded)
+## Backups & restore
 
-- **Time Travel**: D1 keeps 30-day point-in-time history automatically (no setup).
-  Restore with `npx wrangler d1 time-travel restore ash-overseas-prod --timestamp=<ISO>`.
-- **Long-term**: a scheduled Worker will export a SQL dump to the R2 bucket.
-- The verified restore procedure will be documented here before handoff.
+Two independent layers (NFR-B1/B2/B3):
+
+### 1. Time Travel — 30-day point-in-time recovery (built in, no setup)
+
+```sh
+# See the current bookmark, or a bookmark at a timestamp:
+npx wrangler d1 time-travel info ash-overseas-prod --env production
+# Restore the DB to a moment (last 30 days):
+npx wrangler d1 time-travel restore ash-overseas-prod --env production --timestamp="2026-07-08T09:00:00Z"
+```
+
+### 2. Off-store SQL dumps in R2 (long-term retention)
+
+The production Worker runs a **nightly cron** (`triggers.crons` in `wrangler.jsonc`) that writes a
+full `INSERT`-statement SQL dump to the R2 bucket under `backups/<timestamp>.sql`. Requires the
+bucket (SETUP.md §3) and `wrangler deploy --env production`.
+
+```sh
+# List / download dumps:
+npx wrangler r2 object list ash-overseas-backups --prefix backups/
+npx wrangler r2 object get ash-overseas-backups backups/<timestamp>.sql --file restore.sql
+```
+
+**Restore a dump into a scratch DB (verify before trusting it):**
+
+```sh
+npx wrangler d1 create ash-overseas-restore-check          # scratch DB
+npx wrangler d1 migrations apply ash-overseas-restore-check --remote   # create the schema
+npx wrangler d1 execute ash-overseas-restore-check --remote --file restore.sql
+# Spot-check row counts / a known dealer balance, then delete the scratch DB when done.
+```
+
+> ⚠️ **Perform and verify a restore at least once before handoff** (NFR-B3). The dump is data-only
+> (`INSERT`s); apply migrations first so the tables exist. To restore over an existing DB, clear
+> the tables first or prefer Time Travel.
