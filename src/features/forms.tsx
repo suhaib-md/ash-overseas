@@ -1,7 +1,8 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { ChevronDown, Plus, Trash2, X } from 'lucide-react';
 import { computeTransaction, type TaxType, type TransactionMode } from '../../shared/ledger';
 import { createDealer, createMovement, createTransaction } from '../lib/api';
+import { useDraft } from '../lib/useDraft';
 import { MoneyDisplay, MoneyInput } from '../components/money';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -72,6 +73,15 @@ function Actions({
       >
         {busy ? 'Saving…' : submitLabel}
       </button>
+    </div>
+  );
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-on-surface-variant">{label}</span>
+      {children}
     </div>
   );
 }
@@ -156,6 +166,26 @@ export function NewDealerForm({ onDone, onClose }: { onDone: () => void; onClose
 
 // --- Add money movement ----------------------------------------------------
 
+interface MoneyDraft {
+  direction: 'received' | 'paid';
+  amountPaise: number | null;
+  accountScope: 'actual' | 'current' | 'both';
+  date: string;
+  method: string;
+  reference: string;
+  notes: string;
+}
+
+const emptyMoney = (): MoneyDraft => ({
+  direction: 'received',
+  amountPaise: null,
+  accountScope: 'actual',
+  date: today(),
+  method: '',
+  reference: '',
+  notes: '',
+});
+
 export function AddMoneyForm({
   dealerId,
   onDone,
@@ -165,30 +195,28 @@ export function AddMoneyForm({
   onDone: () => void;
   onClose: () => void;
 }) {
-  const [direction, setDirection] = useState<'received' | 'paid'>('received');
-  const [amountPaise, setAmountPaise] = useState<number | null>(null);
-  const [accountScope, setAccountScope] = useState<'actual' | 'current' | 'both'>('actual');
-  const [date, setDate] = useState(today());
-  const [method, setMethod] = useState('');
-  const [reference, setReference] = useState('');
+  const [d, setD, clearDraft] = useDraft<MoneyDraft>(`draft:money:${dealerId}`, emptyMoney());
+  const patch = (p: Partial<MoneyDraft>) => setD((prev) => ({ ...prev, ...p }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (amountPaise == null || amountPaise <= 0) return setError('Enter an amount');
+    if (d.amountPaise == null || d.amountPaise <= 0) return setError('Enter an amount');
     setBusy(true);
     setError(null);
     try {
       await createMovement({
         dealerId,
-        date,
-        direction,
-        amountPaise,
-        accountScope,
-        method: method || null,
-        reference: reference || null,
+        date: d.date,
+        direction: d.direction,
+        amountPaise: d.amountPaise,
+        accountScope: d.accountScope,
+        method: d.method || null,
+        reference: d.reference || null,
+        notes: d.notes || null,
       });
+      clearDraft();
       onDone();
     } catch (err) {
       setError((err as Error).message);
@@ -203,8 +231,8 @@ export function AddMoneyForm({
           <Field label="Direction">
             <select
               className={inputCls}
-              value={direction}
-              onChange={(e) => setDirection(e.target.value as typeof direction)}
+              value={d.direction}
+              onChange={(e) => patch({ direction: e.target.value as MoneyDraft['direction'] })}
             >
               <option value="received">Received from dealer</option>
               <option value="paid">Paid to dealer</option>
@@ -215,18 +243,25 @@ export function AddMoneyForm({
               type="date"
               max={today()}
               className={inputCls}
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+              value={d.date}
+              onChange={(e) => patch({ date: e.target.value })}
             />
           </Field>
         </div>
-        <MoneyInput label="Amount" value={amountPaise} onChange={setAmountPaise} required />
+        <MoneyInput
+          label="Amount"
+          value={d.amountPaise}
+          onChange={(v) => patch({ amountPaise: v })}
+          required
+        />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Applies to">
             <select
               className={inputCls}
-              value={accountScope}
-              onChange={(e) => setAccountScope(e.target.value as typeof accountScope)}
+              value={d.accountScope}
+              onChange={(e) =>
+                patch({ accountScope: e.target.value as MoneyDraft['accountScope'] })
+              }
             >
               <option value="actual">Actual only</option>
               <option value="current">Current only</option>
@@ -234,7 +269,11 @@ export function AddMoneyForm({
             </select>
           </Field>
           <Field label="Method">
-            <select className={inputCls} value={method} onChange={(e) => setMethod(e.target.value)}>
+            <select
+              className={inputCls}
+              value={d.method}
+              onChange={(e) => patch({ method: e.target.value })}
+            >
               <option value="">—</option>
               <option value="cash">Cash</option>
               <option value="bank">Bank</option>
@@ -246,8 +285,15 @@ export function AddMoneyForm({
         <Field label="Reference">
           <input
             className={inputCls}
-            value={reference}
-            onChange={(e) => setReference(e.target.value)}
+            value={d.reference}
+            onChange={(e) => patch({ reference: e.target.value })}
+          />
+        </Field>
+        <Field label="Notes">
+          <input
+            className={inputCls}
+            value={d.notes}
+            onChange={(e) => patch({ notes: e.target.value })}
           />
         </Field>
         <Actions busy={busy} error={error} submitLabel="Save money movement" />
@@ -259,6 +305,7 @@ export function AddMoneyForm({
 // --- Add transaction (goods) ----------------------------------------------
 
 interface LineState {
+  id: string;
   itemName: string;
   unit: string;
   quantity: string;
@@ -266,13 +313,43 @@ interface LineState {
   currentRatePaise: number | null;
   gstRatePercent: string;
 }
-const emptyLine = (): LineState => ({
+
+interface TxnDraft {
+  mode: TransactionMode;
+  taxType: TaxType;
+  date: string;
+  referenceTag: string;
+  invoiceNo: string;
+  invoiceDate: string;
+  discountPaise: number | null;
+  freightPaise: number | null;
+  isCreditDebitNote: boolean;
+  notes: string;
+  lines: LineState[];
+}
+
+const newLine = (): LineState => ({
+  id: crypto.randomUUID(),
   itemName: '',
   unit: '',
   quantity: '',
   actualRatePaise: null,
   currentRatePaise: null,
   gstRatePercent: '18',
+});
+
+const emptyTxn = (mode: TransactionMode): TxnDraft => ({
+  mode,
+  taxType: 'intra',
+  date: today(),
+  referenceTag: '',
+  invoiceNo: '',
+  invoiceDate: '',
+  discountPaise: null,
+  freightPaise: null,
+  isCreditDebitNote: false,
+  notes: '',
+  lines: [newLine()],
 });
 
 export function AddTransactionForm({
@@ -286,19 +363,15 @@ export function AddTransactionForm({
   onDone: () => void;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<TransactionMode>(defaultMode);
-  const [taxType, setTaxType] = useState<TaxType>('intra');
-  const [date, setDate] = useState(today());
-  const [referenceTag, setReferenceTag] = useState('');
-  const [lines, setLines] = useState<LineState[]>([emptyLine()]);
+  const [d, setD, clearDraft] = useDraft<TxnDraft>(`draft:txn:${dealerId}`, emptyTxn(defaultMode));
+  const patch = (p: Partial<TxnDraft>) => setD((prev) => ({ ...prev, ...p }));
+  const setLine = (id: string, p: Partial<LineState>) =>
+    setD((prev) => ({ ...prev, lines: prev.lines.map((l) => (l.id === id ? { ...l, ...p } : l)) }));
+  const [showMore, setShowMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function setLine(i: number, patch: Partial<LineState>) {
-    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  }
-
-  const engineLines = lines
+  const engineLines = d.lines
     .filter(
       (l) => Number(l.quantity) > 0 && l.actualRatePaise != null && l.currentRatePaise != null,
     )
@@ -311,14 +384,22 @@ export function AddTransactionForm({
 
   let summary: ReturnType<typeof computeTransaction> | null = null;
   try {
-    if (engineLines.length > 0) summary = computeTransaction({ mode, taxType, lines: engineLines });
+    if (engineLines.length > 0) {
+      summary = computeTransaction({
+        mode: d.mode,
+        taxType: d.taxType,
+        lines: engineLines,
+        discountPaise: d.discountPaise ?? 0,
+        freightPaise: d.freightPaise ?? 0,
+      });
+    }
   } catch {
     summary = null;
   }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    const payloadLines = lines
+    const payloadLines = d.lines
       .filter((l) => l.itemName.trim() && Number(l.quantity) > 0)
       .map((l) => ({
         itemName: l.itemName.trim(),
@@ -335,12 +416,19 @@ export function AddTransactionForm({
     try {
       await createTransaction({
         dealerId,
-        date,
-        mode,
-        taxType,
-        referenceTag: referenceTag || null,
+        date: d.date,
+        mode: d.mode,
+        taxType: d.taxType,
+        referenceTag: d.referenceTag || null,
+        invoiceNo: d.invoiceNo || null,
+        invoiceDate: d.invoiceDate || null,
+        discountPaise: d.discountPaise ?? 0,
+        freightPaise: d.freightPaise ?? 0,
+        isCreditDebitNote: d.isCreditDebitNote,
+        notes: d.notes || null,
         lines: payloadLines,
       });
+      clearDraft();
       onDone();
     } catch (err) {
       setError((err as Error).message);
@@ -349,14 +437,14 @@ export function AddTransactionForm({
   }
 
   return (
-    <Modal title={mode === 'sale' ? 'New sale' : 'New purchase'} onClose={onClose}>
+    <Modal title={d.mode === 'sale' ? 'New sale' : 'New purchase'} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <div className="grid grid-cols-3 gap-3">
           <Field label="Mode">
             <select
               className={inputCls}
-              value={mode}
-              onChange={(e) => setMode(e.target.value as TransactionMode)}
+              value={d.mode}
+              onChange={(e) => patch({ mode: e.target.value as TransactionMode })}
             >
               <option value="sale">Sale</option>
               <option value="purchase">Purchase</option>
@@ -365,8 +453,8 @@ export function AddTransactionForm({
           <Field label="Tax">
             <select
               className={inputCls}
-              value={taxType}
-              onChange={(e) => setTaxType(e.target.value as TaxType)}
+              value={d.taxType}
+              onChange={(e) => patch({ taxType: e.target.value as TaxType })}
             >
               <option value="intra">Intra (CGST+SGST)</option>
               <option value="inter">Inter (IGST)</option>
@@ -378,22 +466,22 @@ export function AddTransactionForm({
               type="date"
               max={today()}
               className={inputCls}
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+              value={d.date}
+              onChange={(e) => patch({ date: e.target.value })}
             />
           </Field>
         </div>
 
-        {lines.map((l, i) => (
-          <div key={i} className="space-y-2 rounded-lg border border-outline-variant p-3">
+        {d.lines.map((l, i) => (
+          <div key={l.id} className="space-y-2 rounded-lg border border-outline-variant p-3">
             <div className="flex items-center justify-between">
               <span className="text-label-caps uppercase text-on-surface-variant">
                 Line {i + 1}
               </span>
-              {lines.length > 1 && (
+              {d.lines.length > 1 && (
                 <button
                   type="button"
-                  onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}
+                  onClick={() => patch({ lines: d.lines.filter((x) => x.id !== l.id) })}
                   className="text-negative"
                   aria-label="Remove line"
                 >
@@ -406,7 +494,7 @@ export function AddTransactionForm({
                 className={inputCls}
                 placeholder="Item name"
                 value={l.itemName}
-                onChange={(e) => setLine(i, { itemName: e.target.value })}
+                onChange={(e) => setLine(l.id, { itemName: e.target.value })}
               />
               <div className="grid grid-cols-2 gap-2">
                 <input
@@ -414,13 +502,13 @@ export function AddTransactionForm({
                   inputMode="decimal"
                   placeholder="Qty"
                   value={l.quantity}
-                  onChange={(e) => setLine(i, { quantity: e.target.value })}
+                  onChange={(e) => setLine(l.id, { quantity: e.target.value })}
                 />
                 <input
                   className={inputCls}
                   placeholder="Unit"
                   value={l.unit}
-                  onChange={(e) => setLine(i, { unit: e.target.value })}
+                  onChange={(e) => setLine(l.id, { unit: e.target.value })}
                 />
               </div>
             </div>
@@ -428,19 +516,19 @@ export function AddTransactionForm({
               <MoneyInput
                 label="Actual rate"
                 value={l.actualRatePaise}
-                onChange={(v) => setLine(i, { actualRatePaise: v })}
+                onChange={(v) => setLine(l.id, { actualRatePaise: v })}
               />
               <MoneyInput
                 label="Current rate"
                 value={l.currentRatePaise}
-                onChange={(v) => setLine(i, { currentRatePaise: v })}
+                onChange={(v) => setLine(l.id, { currentRatePaise: v })}
               />
               <Field label="GST %">
                 <input
                   className={inputCls}
                   inputMode="decimal"
                   value={l.gstRatePercent}
-                  onChange={(e) => setLine(i, { gstRatePercent: e.target.value })}
+                  onChange={(e) => setLine(l.id, { gstRatePercent: e.target.value })}
                 />
               </Field>
             </div>
@@ -449,7 +537,7 @@ export function AddTransactionForm({
 
         <button
           type="button"
-          onClick={() => setLines((ls) => [...ls, emptyLine()])}
+          onClick={() => patch({ lines: [...d.lines, newLine()] })}
           className="inline-flex items-center gap-1 text-body-md font-medium text-primary"
         >
           <Plus size={16} /> Add line
@@ -458,11 +546,73 @@ export function AddTransactionForm({
         <Field label="Reference tag">
           <input
             className={inputCls}
-            value={referenceTag}
-            onChange={(e) => setReferenceTag(e.target.value)}
+            value={d.referenceTag}
+            onChange={(e) => patch({ referenceTag: e.target.value })}
             placeholder="ASH 39"
           />
         </Field>
+
+        {/* Optional invoice / adjustment fields */}
+        <button
+          type="button"
+          onClick={() => setShowMore((s) => !s)}
+          className="inline-flex items-center gap-1 text-body-md font-medium text-on-surface-variant"
+        >
+          <ChevronDown
+            size={16}
+            className={showMore ? 'rotate-180 transition-transform' : 'transition-transform'}
+          />
+          {showMore ? 'Hide' : 'More'} options
+        </button>
+        {showMore && (
+          <div className="space-y-3 rounded-lg bg-surface-container-low p-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Invoice no.">
+                <input
+                  className={inputCls}
+                  value={d.invoiceNo}
+                  onChange={(e) => patch({ invoiceNo: e.target.value })}
+                />
+              </Field>
+              <Field label="Invoice date">
+                <input
+                  type="date"
+                  max={today()}
+                  className={inputCls}
+                  value={d.invoiceDate}
+                  onChange={(e) => patch({ invoiceDate: e.target.value })}
+                />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <MoneyInput
+                label="Discount"
+                value={d.discountPaise}
+                onChange={(v) => patch({ discountPaise: v })}
+              />
+              <MoneyInput
+                label="Freight"
+                value={d.freightPaise}
+                onChange={(v) => patch({ freightPaise: v })}
+              />
+            </div>
+            <label className="flex items-center gap-2 text-body-md">
+              <input
+                type="checkbox"
+                checked={d.isCreditDebitNote}
+                onChange={(e) => patch({ isCreditDebitNote: e.target.checked })}
+              />
+              Credit / debit note (posts in the reversing direction)
+            </label>
+            <Field label="Notes">
+              <input
+                className={inputCls}
+                value={d.notes}
+                onChange={(e) => patch({ notes: e.target.value })}
+              />
+            </Field>
+          </div>
+        )}
 
         {summary && (
           <div className="space-y-1 rounded-lg bg-surface-container-low p-3 text-body-md">
@@ -472,7 +622,9 @@ export function AddTransactionForm({
             <Row label="Current / invoice total">
               <MoneyDisplay paise={summary.currentPostedPaise} className="font-semibold" />
             </Row>
-            <Row label={taxType === 'inter' ? 'IGST' : taxType === 'intra' ? 'CGST + SGST' : 'GST'}>
+            <Row
+              label={d.taxType === 'inter' ? 'IGST' : d.taxType === 'intra' ? 'CGST + SGST' : 'GST'}
+            >
               <MoneyDisplay paise={summary.totalGstPaise} />
             </Row>
             {summary.currentRoundOffPaise !== 0 && (
@@ -483,17 +635,8 @@ export function AddTransactionForm({
           </div>
         )}
 
-        <Actions busy={busy} error={error} submitLabel={`Save ${mode}`} />
+        <Actions busy={busy} error={error} submitLabel={`Save ${d.mode}`} />
       </form>
     </Modal>
-  );
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-on-surface-variant">{label}</span>
-      {children}
-    </div>
   );
 }
