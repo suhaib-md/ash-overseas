@@ -4,10 +4,11 @@
  */
 import { z } from 'zod';
 
-/** Integer paise. `.int()` rejects floats and NaN. */
-const paise = z.number().int();
-const nonNegPaise = paise.min(0);
-const positivePaise = paise.min(1);
+/** Integer paise. `.int()` rejects floats and NaN. Bounded well under 2^53. */
+const MAX_PAISE = 1_000_000_000_000; // ₹1,000 crore — generous ceiling, DoS/overflow guard
+const paise = z.number().int().min(-MAX_PAISE).max(MAX_PAISE);
+const nonNegPaise = z.number().int().min(0).max(MAX_PAISE);
+const positivePaise = z.number().int().min(1).max(MAX_PAISE);
 
 /** SRS §10.8 — a date may not be in the future beyond today (server local day). */
 function notFuture(d: Date): boolean {
@@ -42,7 +43,7 @@ export type DealerUpdateInput = z.infer<typeof dealerUpdateSchema>;
 
 export const transactionLineSchema = z.object({
   itemName: z.string().trim().min(1).max(200),
-  quantity: z.number().positive(),
+  quantity: z.number().positive().max(1_000_000_000),
   unit: z.string().max(50).nullish(),
   actualRatePaise: nonNegPaise,
   currentRatePaise: nonNegPaise,
@@ -54,7 +55,7 @@ export const transactionCreateSchema = z.object({
   date: pastDate,
   mode: z.enum(['sale', 'purchase']),
   taxType: z.enum(['intra', 'inter', 'none']).default('intra'),
-  lines: z.array(transactionLineSchema).min(1),
+  lines: z.array(transactionLineSchema).min(1).max(200),
   discountPaise: nonNegPaise.default(0),
   freightPaise: nonNegPaise.default(0),
   referenceTag: z.string().max(100).nullish(),
