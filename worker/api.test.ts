@@ -179,4 +179,30 @@ describe('dealer + transaction + ledger API', () => {
     });
     expect(txn.status).toBe(400);
   });
+
+  it('voids a movement: original marked voided, reversal present, balance neutralised', async () => {
+    const created = await post('/api/dealers', { name: 'Voidy', type: 'both' });
+    const { dealer } = (await created.json()) as { dealer: { id: number } };
+    const m = await post('/api/movements', {
+      dealerId: dealer.id,
+      date: '2026-06-01',
+      direction: 'received',
+      amountPaise: R(1000),
+      accountScope: 'actual',
+    });
+    const { movement } = (await m.json()) as { movement: { movementId: number } };
+
+    const voided = await post(`/api/movements/${movement.movementId}/void`, {});
+    expect(voided.status).toBe(200);
+
+    const ledger = await req(`/api/dealers/${dealer.id}/ledger?account=actual`);
+    const body = (await ledger.json()) as {
+      headline: { balancePaise: number };
+      entries: { isVoided: boolean; voidable: boolean; sourceType: string }[];
+    };
+    expect(body.headline.balancePaise).toBe(0); // neutralised by the reversal
+    const original = body.entries.find((e) => e.sourceType === 'movement');
+    expect(original).toMatchObject({ isVoided: true, voidable: false });
+    expect(body.entries.some((e) => e.sourceType === 'adjustment')).toBe(true);
+  });
 });

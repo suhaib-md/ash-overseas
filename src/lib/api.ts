@@ -38,6 +38,8 @@ export interface LedgerEntry {
   runningBalancePaise: number;
   sourceType: string;
   sourceId: number | null;
+  isVoided: boolean;
+  voidable: boolean;
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -88,3 +90,9 @@ export const createMovement = (body: unknown) =>
     method: 'POST',
     body: JSON.stringify(body),
   });
+
+export const voidSource = (kind: 'transaction' | 'movement', id: number) =>
+  api<{ voided: { reversalCount: number } }>(
+    `/${kind === 'transaction' ? 'transactions' : 'movements'}/${id}/void`,
+    { method: 'POST' },
+  );

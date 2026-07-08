@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, HandCoins, Plus } from 'lucide-react';
+import { ArrowLeft, Ban, HandCoins, Plus } from 'lucide-react';
 import {
   getDealer,
   getLedger,
+  voidSource,
   type AccountBalance,
   type AccountName,
   type Dealer,
   type LedgerEntry,
 } from '../lib/api';
 import { BalanceHeadline, InlineBalance, MoneyDisplay } from '../components/money';
-import { AddMoneyForm, AddTransactionForm } from './forms';
+import { AddMoneyForm, AddTransactionForm, Modal } from './forms';
+
+type VoidTarget = { kind: 'transaction' | 'movement'; id: number; label: string };
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -34,6 +37,8 @@ export function DealerDetail({
   );
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<'txn' | 'money' | null>(null);
+  const [voidTarget, setVoidTarget] = useState<VoidTarget | null>(null);
+  const [voiding, setVoiding] = useState(false);
 
   const loadHeader = useCallback(() => {
     getDealer(dealerId)
@@ -61,6 +66,21 @@ export function DealerDetail({
     setModal(null);
     loadHeader();
     loadLedger();
+  }
+
+  async function confirmVoid() {
+    if (!voidTarget) return;
+    setVoiding(true);
+    try {
+      await voidSource(voidTarget.kind, voidTarget.id);
+      setVoidTarget(null);
+      loadHeader();
+      loadLedger();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setVoiding(false);
+    }
   }
 
   const headline = ledger?.headline ?? balances?.[account] ?? null;
@@ -151,13 +171,22 @@ export function DealerDetail({
           {ledger.entries.map((e) => {
             const isDebit = e.debitPaise > 0;
             const delta = isDebit ? e.debitPaise : e.creditPaise;
+            const labelText = e.label === 'adjustment' ? 'reversal' : (e.label ?? '');
             return (
-              <li key={e.id} className="flex items-center gap-3 px-4 py-3">
+              <li
+                key={e.id}
+                className={`flex items-center gap-3 px-4 py-3 ${e.isVoided ? 'opacity-60' : ''}`}
+              >
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
+                  <span className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-surface-container px-2 py-0.5 text-label-caps uppercase text-on-surface-variant">
-                      {e.label}
+                      {labelText}
                     </span>
+                    {e.isVoided && (
+                      <span className="rounded-full bg-negative-container px-2 py-0.5 text-label-caps uppercase text-on-negative-container">
+                        Voided
+                      </span>
+                    )}
                     <span className="truncate text-body-md text-on-surface-variant">
                       {e.description}
                     </span>
@@ -168,7 +197,13 @@ export function DealerDetail({
                 </span>
                 <span className="text-right">
                   <span
-                    className={`block font-medium ${isDebit ? 'text-positive' : 'text-negative'}`}
+                    className={`block font-medium ${
+                      e.isVoided
+                        ? 'text-on-surface-variant line-through'
+                        : isDebit
+                          ? 'text-positive'
+                          : 'text-negative'
+                    }`}
                   >
                     {isDebit ? '+' : '−'}
                     <MoneyDisplay paise={delta} />
@@ -177,6 +212,23 @@ export function DealerDetail({
                     <InlineBalance balancePaise={e.runningBalancePaise} />
                   </span>
                 </span>
+                {e.voidable && e.sourceId != null && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVoidTarget({
+                        kind: e.sourceType as 'transaction' | 'movement',
+                        id: e.sourceId!,
+                        label: `${labelText} ${e.description ?? ''}`.trim(),
+                      })
+                    }
+                    className="shrink-0 rounded-lg p-2 text-on-surface-variant hover:bg-negative-container hover:text-on-negative-container"
+                    aria-label="Void entry"
+                    title="Void"
+                  >
+                    <Ban size={16} />
+                  </button>
+                )}
               </li>
             );
           })}
@@ -193,6 +245,36 @@ export function DealerDetail({
           onClose={() => setModal(null)}
           onDone={afterWrite}
         />
+      )}
+
+      {voidTarget && (
+        <Modal title="Void this entry?" onClose={() => !voiding && setVoidTarget(null)}>
+          <div className="space-y-4">
+            <p className="text-body-md text-on-surface-variant">
+              This posts an equal-and-opposite <strong>reversing entry</strong> on both accounts and
+              marks the original as voided. Nothing is deleted — the original stays for the record.
+            </p>
+            {error && <p className="text-body-md text-negative">{error}</p>}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setVoidTarget(null)}
+                disabled={voiding}
+                className="flex-1 rounded-lg border border-outline-variant py-2.5 font-semibold hover:bg-surface-container disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmVoid}
+                disabled={voiding}
+                className="flex-1 rounded-lg bg-negative py-2.5 font-semibold text-on-negative hover:opacity-90 disabled:opacity-50"
+              >
+                {voiding ? 'Voiding…' : 'Void entry'}
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

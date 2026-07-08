@@ -1,6 +1,6 @@
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db/client';
-import { ledgerEntries } from '../db/schema';
+import { ledgerEntries, moneyMovements, transactions } from '../db/schema';
 import { type Account, type BalanceDescription, describeBalance } from '../../shared/ledger';
 
 export async function getBalance(db: Db, dealerId: number, account: Account): Promise<number> {
@@ -43,6 +43,10 @@ export interface LedgerEntryView {
   runningBalancePaise: number;
   sourceType: string;
   sourceId: number | null;
+  /** The originating transaction/movement is voided → show struck-through. */
+  isVoided: boolean;
+  /** This entry's source can be voided from the UI (a live transaction/movement). */
+  voidable: boolean;
 }
 
 /** Chronological ledger for one account, oldest → newest ((entry_date, id) order). */
@@ -51,7 +55,7 @@ export async function getLedger(
   dealerId: number,
   account: Account,
 ): Promise<LedgerEntryView[]> {
-  return db
+  const rows = await db
     .select({
       id: ledgerEntries.id,
       entryDate: ledgerEntries.entryDate,
@@ -66,4 +70,40 @@ export async function getLedger(
     .from(ledgerEntries)
     .where(and(eq(ledgerEntries.dealerId, dealerId), eq(ledgerEntries.account, account)))
     .orderBy(asc(ledgerEntries.entryDate), asc(ledgerEntries.id));
+
+  // Which source transactions/movements are voided (for strike-through display).
+  const txnIds = rows
+    .filter((r) => r.sourceType === 'transaction' && r.sourceId != null)
+    .map((r) => r.sourceId!);
+  const movIds = rows
+    .filter((r) => r.sourceType === 'movement' && r.sourceId != null)
+    .map((r) => r.sourceId!);
+  const voidedTxn = txnIds.length
+    ? new Set(
+        (
+          await db
+            .select({ id: transactions.id })
+            .from(transactions)
+            .where(and(inArray(transactions.id, txnIds), eq(transactions.isVoided, true)))
+        ).map((r) => r.id),
+      )
+    : new Set<number>();
+  const voidedMov = movIds.length
+    ? new Set(
+        (
+          await db
+            .select({ id: moneyMovements.id })
+            .from(moneyMovements)
+            .where(and(inArray(moneyMovements.id, movIds), eq(moneyMovements.isVoided, true)))
+        ).map((r) => r.id),
+      )
+    : new Set<number>();
+
+  return rows.map((r) => {
+    const isVoided =
+      (r.sourceType === 'transaction' && r.sourceId != null && voidedTxn.has(r.sourceId)) ||
+      (r.sourceType === 'movement' && r.sourceId != null && voidedMov.has(r.sourceId));
+    const voidable = (r.sourceType === 'transaction' || r.sourceType === 'movement') && !isVoided;
+    return { ...r, isVoided, voidable };
+  });
 }
