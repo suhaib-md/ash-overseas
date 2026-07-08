@@ -10,8 +10,8 @@ The full specification lives in `SRS.md`. When in doubt about any business rule,
 
 - **Phase 0** (foundations & setup) — ✅ complete
 - **Phase 1** (core ledger) — ✅ complete: pure engine + atomic posting layer + dealer/transaction/money-movement APIs + minimal dealer-detail UI. Section 6 passes at both the pure and D1-integration level (55 tests green).
-- **Phase 2** (usability/completeness) — next
-- **Phase 3** (auth/hardening/handoff) — blocked on Phase 2
+- **Phase 2** (usability/completeness) — ✅ complete: real routing + Home/nav; full entry flows with draft persistence; void UI (reversal shown); per-transaction GST split (CGST/SGST vs IGST) + round-off; success toasts, item/unit autocomplete, modal a11y, installable PWA (shell-only cache). 59 tests green (43 unit + 16 D1/API).
+- **Phase 3** (auth/hardening/handoff) — next
 
 The detailed, sequenced build plan (sub-phases, steps, and "Done when" gates) is in **[Delivery Plan (Detailed)](#delivery-plan-detailed)** at the end of this file. Cross-cutting engineering, security, and UI/UX rules live in their own sections and are referenced from the phases.
 
