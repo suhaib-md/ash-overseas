@@ -291,4 +291,28 @@ describe('dealer + transaction + ledger API', () => {
     );
     expect(res.status).toBe(403);
   });
+
+  it('audit log records creates and voids', async () => {
+    const created = await post('/api/dealers', { name: 'Aud', type: 'both' });
+    const { dealer } = (await created.json()) as { dealer: { id: number } };
+    const m = await post('/api/movements', {
+      dealerId: dealer.id,
+      date: '2026-06-01',
+      direction: 'received',
+      amountPaise: R(1000),
+      accountScope: 'actual',
+    });
+    const { movement } = (await m.json()) as { movement: { movementId: number } };
+    await post(`/api/movements/${movement.movementId}/void`, {});
+
+    const res = await req('/api/audit');
+    const body = (await res.json()) as { entries: { action: string; entity: string }[] };
+    expect(body.entries.some((e) => e.action === 'create' && e.entity === 'dealers')).toBe(true);
+    expect(body.entries.some((e) => e.action === 'create' && e.entity === 'money_movements')).toBe(
+      true,
+    );
+    expect(body.entries.some((e) => e.action === 'void' && e.entity === 'money_movements')).toBe(
+      true,
+    );
+  });
 });

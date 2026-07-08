@@ -3,6 +3,7 @@ import { ShellLayout } from './components/AppShell';
 import { Home } from './features/Home';
 import { DealerList } from './features/DealerList';
 import { DealerDetail } from './features/DealerDetail';
+import { AuditLog } from './features/AuditLog';
 
 export function App() {
   return (
@@ -13,6 +14,7 @@ export function App() {
         <Route path="/sale" element={<DealerListPage activity="sale" />} />
         <Route path="/dealers" element={<DealerListPage activity="all" />} />
         <Route path="/dealers/:id" element={<DealerDetailPage />} />
+        <Route path="/audit" element={<AuditLog />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

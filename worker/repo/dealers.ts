@@ -1,6 +1,6 @@
 import { and, eq, inArray, like } from 'drizzle-orm';
 import type { Db } from '../db/client';
-import { dealers } from '../db/schema';
+import { dealers, auditLog } from '../db/schema';
 import type { DealerCreateInput, DealerUpdateInput } from '../../shared/schemas';
 import { postOpening } from '../ledger/post';
 import { getBalance } from './ledger';
@@ -21,6 +21,13 @@ export async function createDealer(db: Db, input: DealerCreateInput): Promise<De
     })
     .returning();
   const dealer = rows[0]!;
+  await db.insert(auditLog).values({
+    action: 'create',
+    entity: 'dealers',
+    entityId: dealer.id,
+    beforeJson: null,
+    afterJson: JSON.stringify(dealer),
+  });
 
   const now = new Date();
   if (input.openingActualPaise != null && input.openingActualPaise !== 0) {
@@ -60,18 +67,44 @@ export async function updateDealer(
   if (patch.stateCode !== undefined) set.stateCode = patch.stateCode ?? null;
   if (patch.type !== undefined) set.type = patch.type;
 
-  if (Object.keys(set).length === 0) return getDealer(db, id);
+  const before = await getDealer(db, id);
+  if (!before) return null;
+  if (Object.keys(set).length === 0) return before;
+
   const rows = await db.update(dealers).set(set).where(eq(dealers.id, id)).returning();
-  return rows[0] ?? null;
+  const after = rows[0] ?? null;
+  if (after) {
+    await db.insert(auditLog).values({
+      action: 'edit',
+      entity: 'dealers',
+      entityId: id,
+      beforeJson: JSON.stringify(before),
+      afterJson: JSON.stringify(after),
+    });
+  }
+  return after;
 }
 
 export async function archiveDealer(db: Db, id: number): Promise<DealerRow | null> {
+  const before = await getDealer(db, id);
+  if (!before) return null;
+
   const rows = await db
     .update(dealers)
     .set({ isArchived: true })
     .where(eq(dealers.id, id))
     .returning();
-  return rows[0] ?? null;
+  const after = rows[0] ?? null;
+  if (after) {
+    await db.insert(auditLog).values({
+      action: 'edit',
+      entity: 'dealers',
+      entityId: id,
+      beforeJson: JSON.stringify({ isArchived: before.isArchived }),
+      afterJson: JSON.stringify({ isArchived: true }),
+    });
+  }
+  return after;
 }
 
 export interface DealerListItem {

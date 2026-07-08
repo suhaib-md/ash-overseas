@@ -136,6 +136,18 @@ export const getTransaction = (id: number) =>
 export const getSuggestions = (field: 'item' | 'unit') =>
   api<{ values: string[] }>(`/suggestions?field=${field}`);
 
+export interface AuditEntry {
+  id: number;
+  action: string;
+  entity: string;
+  entityId: number | null;
+  beforeJson: string | null;
+  afterJson: string | null;
+  at: string;
+}
+
+export const getAudit = () => api<{ entries: AuditEntry[] }>(`/audit`);
+
 export const voidSource = (kind: 'transaction' | 'movement', id: number) =>
   api<{ voided: { reversalCount: number } }>(
     `/${kind === 'transaction' ? 'transactions' : 'movements'}/${id}/void`,
