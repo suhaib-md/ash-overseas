@@ -275,4 +275,20 @@ describe('dealer + transaction + ledger API', () => {
     const bad = await req('/api/suggestions?field=nope');
     expect(bad.status).toBe(400);
   });
+
+  it('sets security headers on responses', async () => {
+    const res = await req('/api/health');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+  });
+
+  it('rejects API requests without an Access JWT when Access is configured (403)', async () => {
+    const res = await app.fetch(
+      new Request('https://test.local/api/dealers', {
+        headers: { 'sec-fetch-site': 'same-origin' },
+      }),
+      { DB: h.d1, CF_ACCESS_TEAM_DOMAIN: 'example.cloudflareaccess.com', CF_ACCESS_AUD: 'aud-tag' },
+    );
+    expect(res.status).toBe(403);
+  });
 });

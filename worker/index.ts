@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { secureHeaders } from 'hono/secure-headers';
 import type { ZodType } from 'zod';
 import { getDb } from './db/client';
 import {
@@ -13,10 +14,13 @@ import { createDealer, getDealer, updateDealer, archiveDealer, listDealers } fro
 import { getBalance, getDealerBalances, getLedger } from './repo/ledger';
 import { getTransactionDetail, getSuggestions } from './repo/transactions';
 import { postTransaction, postMovement, voidSource } from './ledger/post';
+import { verifyAccessJwt } from './auth';
 
 export interface Env {
   DB: D1Database;
-  // BACKUPS: R2Bucket — added in Phase 3 alongside the R2 bucket.
+  // Set in production (wrangler secret) → enables Access JWT verification. Unset = local dev.
+  CF_ACCESS_TEAM_DOMAIN?: string;
+  CF_ACCESS_AUD?: string;
 }
 
 class HttpError extends Error {
@@ -56,7 +60,34 @@ function intParam(value: string | undefined, name: string): number {
 
 const app = new Hono<{ Bindings: Env }>();
 
-// CSRF backstop: reject cross-site state-changing requests (auth arrives in Phase 3).
+// Security headers on every worker response (Security Blueprint L2). The static SPA/HTML
+// responses get their headers from public/_headers (served by the assets layer).
+app.use(
+  '*',
+  secureHeaders({
+    xFrameOptions: 'DENY',
+    strictTransportSecurity: 'max-age=63072000; includeSubDomains; preload',
+  }),
+);
+
+// Cloudflare Access JWT verification (Security Blueprint L1). Skipped when CF_ACCESS_* are
+// unset (local dev); in production a missing/invalid token → 403, closing the
+// "hit the *.workers.dev URL directly" bypass.
+app.use('/api/*', async (c, next) => {
+  const teamDomain = c.env.CF_ACCESS_TEAM_DOMAIN;
+  const aud = c.env.CF_ACCESS_AUD;
+  if (!teamDomain || !aud) return next();
+  const token = c.req.header('cf-access-jwt-assertion');
+  if (!token) return c.json({ error: 'unauthenticated' }, 403);
+  try {
+    await verifyAccessJwt(token, { teamDomain, aud });
+  } catch {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+  return next();
+});
+
+// CSRF backstop: reject cross-site state-changing requests.
 app.use('/api/*', async (c, next) => {
   if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
     const site = c.req.header('sec-fetch-site');
