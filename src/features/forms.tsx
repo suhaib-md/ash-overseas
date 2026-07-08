@@ -1,8 +1,9 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { ChevronDown, Plus, Trash2, X } from 'lucide-react';
 import { computeTransaction, type TaxType, type TransactionMode } from '../../shared/ledger';
-import { createDealer, createMovement, createTransaction } from '../lib/api';
+import { createDealer, createMovement, createTransaction, getSuggestions } from '../lib/api';
 import { useDraft } from '../lib/useDraft';
+import { useToast } from '../components/Toast';
 import { MoneyDisplay, MoneyInput } from '../components/money';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -16,12 +17,23 @@ export function Modal({
   onClose: () => void;
   children: ReactNode;
 }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-xl bg-surface-bright p-5 sm:rounded-xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -96,6 +108,7 @@ export function NewDealerForm({ onDone, onClose }: { onDone: () => void; onClose
   const [openingActual, setOpeningActual] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -109,6 +122,7 @@ export function NewDealerForm({ onDone, onClose }: { onDone: () => void; onClose
         stateCode: stateCode || null,
         openingActualPaise: openingActual ?? undefined,
       });
+      toast('Dealer created');
       onDone();
     } catch (err) {
       setError((err as Error).message);
@@ -199,6 +213,7 @@ export function AddMoneyForm({
   const patch = (p: Partial<MoneyDraft>) => setD((prev) => ({ ...prev, ...p }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -216,6 +231,7 @@ export function AddMoneyForm({
         reference: d.reference || null,
         notes: d.notes || null,
       });
+      toast('Money movement saved');
       clearDraft();
       onDone();
     } catch (err) {
@@ -370,6 +386,17 @@ export function AddTransactionForm({
   const [showMore, setShowMore] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
+  const [itemSug, setItemSug] = useState<string[]>([]);
+  const [unitSug, setUnitSug] = useState<string[]>([]);
+  useEffect(() => {
+    getSuggestions('item')
+      .then((r) => setItemSug(r.values))
+      .catch(() => {});
+    getSuggestions('unit')
+      .then((r) => setUnitSug(r.values))
+      .catch(() => {});
+  }, []);
 
   const engineLines = d.lines
     .filter(
@@ -428,6 +455,7 @@ export function AddTransactionForm({
         notes: d.notes || null,
         lines: payloadLines,
       });
+      toast(`${d.mode === 'sale' ? 'Sale' : 'Purchase'} saved`);
       clearDraft();
       onDone();
     } catch (err) {
@@ -439,6 +467,16 @@ export function AddTransactionForm({
   return (
     <Modal title={d.mode === 'sale' ? 'New sale' : 'New purchase'} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
+        <datalist id="item-suggestions">
+          {itemSug.map((v) => (
+            <option key={v} value={v} />
+          ))}
+        </datalist>
+        <datalist id="unit-suggestions">
+          {unitSug.map((v) => (
+            <option key={v} value={v} />
+          ))}
+        </datalist>
         <div className="grid grid-cols-3 gap-3">
           <Field label="Mode">
             <select
@@ -493,6 +531,7 @@ export function AddTransactionForm({
               <input
                 className={inputCls}
                 placeholder="Item name"
+                list="item-suggestions"
                 value={l.itemName}
                 onChange={(e) => setLine(l.id, { itemName: e.target.value })}
               />
@@ -507,6 +546,7 @@ export function AddTransactionForm({
                 <input
                   className={inputCls}
                   placeholder="Unit"
+                  list="unit-suggestions"
                   value={l.unit}
                   onChange={(e) => setLine(l.id, { unit: e.target.value })}
                 />

@@ -11,7 +11,7 @@ import {
 import { describeBalance, type Account } from '../shared/ledger';
 import { createDealer, getDealer, updateDealer, archiveDealer, listDealers } from './repo/dealers';
 import { getBalance, getDealerBalances, getLedger } from './repo/ledger';
-import { getTransactionDetail } from './repo/transactions';
+import { getTransactionDetail, getSuggestions } from './repo/transactions';
 import { postTransaction, postMovement, voidSource } from './ledger/post';
 
 export interface Env {
@@ -130,6 +130,13 @@ app.get('/api/dealers/:id/ledger', async (c) => {
 });
 
 // --- Transactions & money movements ----------------------------------------
+
+app.get('/api/suggestions', async (c) => {
+  const field = c.req.query('field');
+  if (field !== 'item' && field !== 'unit') throw new HttpError(400, { error: 'invalid_field' });
+  const values = await getSuggestions(getDb(c.env.DB), field);
+  return c.json({ values });
+});
 
 app.get('/api/transactions/:id', async (c) => {
   const id = intParam(c.req.param('id'), 'id');

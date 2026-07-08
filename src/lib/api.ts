@@ -133,6 +133,9 @@ export interface TransactionDetail {
 export const getTransaction = (id: number) =>
   api<{ transaction: TransactionDetail }>(`/transactions/${id}`);
 
+export const getSuggestions = (field: 'item' | 'unit') =>
+  api<{ values: string[] }>(`/suggestions?field=${field}`);
+
 export const voidSource = (kind: 'transaction' | 'movement', id: number) =>
   api<{ voided: { reversalCount: number } }>(
     `/${kind === 'transaction' ? 'transactions' : 'movements'}/${id}/void`,

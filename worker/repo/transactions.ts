@@ -42,6 +42,16 @@ export interface TransactionDetail {
   };
 }
 
+/** Distinct past item names / units, for free-text autocomplete (NFR-U3). */
+export async function getSuggestions(db: Db, field: 'item' | 'unit'): Promise<string[]> {
+  const col = field === 'item' ? transactionLines.itemName : transactionLines.unit;
+  const rows = await db.selectDistinct({ v: col }).from(transactionLines).limit(500);
+  return rows
+    .map((r) => r.v)
+    .filter((v): v is string => !!v && v.trim() !== '')
+    .sort();
+}
+
 /** Full transaction detail incl. the CGST/SGST-vs-IGST split (recomputed via the engine). */
 export async function getTransactionDetail(db: Db, id: number): Promise<TransactionDetail | null> {
   const headerRows = await db.select().from(transactions).where(eq(transactions.id, id)).limit(1);

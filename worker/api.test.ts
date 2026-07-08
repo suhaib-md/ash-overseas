@@ -249,4 +249,30 @@ describe('dealer + transaction + ledger API', () => {
     expect(t.roundOffPaise).toBe(-20);
     expect(t.currentPostedPaise).toBe(R(269323));
   });
+
+  it('suggests distinct past item names for autocomplete', async () => {
+    const created = await post('/api/dealers', { name: 'Sug', type: 'both' });
+    const { dealer } = (await created.json()) as { dealer: { id: number } };
+    await post('/api/transactions', {
+      dealerId: dealer.id,
+      date: '2026-06-02',
+      mode: 'sale',
+      taxType: 'none',
+      lines: [
+        {
+          itemName: 'Brass Castings',
+          quantity: 1,
+          unit: 'kg',
+          actualRatePaise: R(100),
+          currentRatePaise: R(100),
+          gstRatePercent: 0,
+        },
+      ],
+    });
+    const res = await req('/api/suggestions?field=item');
+    expect(((await res.json()) as { values: string[] }).values).toContain('Brass Castings');
+
+    const bad = await req('/api/suggestions?field=nope');
+    expect(bad.status).toBe(400);
+  });
 });

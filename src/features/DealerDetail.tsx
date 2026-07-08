@@ -12,6 +12,7 @@ import {
 import { BalanceHeadline, InlineBalance, MoneyDisplay } from '../components/money';
 import { AddMoneyForm, AddTransactionForm, Modal } from './forms';
 import { TransactionDetailPanel } from './TransactionDetail';
+import { useToast } from '../components/Toast';
 
 type VoidTarget = { kind: 'transaction' | 'movement'; id: number; label: string };
 
@@ -41,6 +42,7 @@ export function DealerDetail({
   const [voidTarget, setVoidTarget] = useState<VoidTarget | null>(null);
   const [voiding, setVoiding] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const toast = useToast();
 
   const loadHeader = useCallback(() => {
     getDealer(dealerId)
@@ -76,6 +78,7 @@ export function DealerDetail({
     try {
       await voidSource(voidTarget.kind, voidTarget.id);
       setVoidTarget(null);
+      toast('Entry voided');
       loadHeader();
       loadLedger();
     } catch (e) {
