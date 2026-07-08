@@ -4,9 +4,8 @@ The one-time steps to take the app from "code-complete" to "safely live and hand
 Do them **in this order** — later steps depend on earlier ones. Everything here needs your
 Cloudflare/GitHub accounts, so it can't be scripted for you.
 
-> **Golden rule:** finish Step 0 → Step 2 (deploy behind Access) **before entering any real
-> financial data**. There's a brief window where the app is deployed but not yet gated; that's
-> fine while it's empty.
+> **Golden rule:** deploy **and** put it behind Access **before entering any real financial data**.
+> There's a brief window where the app is deployed but not yet gated; that's fine while it's empty.
 
 Facts you'll reuse:
 
