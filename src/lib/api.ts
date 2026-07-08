@@ -91,6 +91,48 @@ export const createMovement = (body: unknown) =>
     body: JSON.stringify(body),
   });
 
+export interface TransactionLineView {
+  itemName: string;
+  quantity: number;
+  unit: string | null;
+  actualRatePaise: number;
+  actualAmountPaise: number;
+  currentRatePaise: number;
+  currentAmountPaise: number;
+  gstRate: number;
+  gstAmountPaise: number;
+}
+
+export interface TransactionDetail {
+  id: number;
+  humanId: string;
+  referenceTag: string | null;
+  mode: 'sale' | 'purchase';
+  taxType: 'intra' | 'inter' | 'none';
+  invoiceNo: string | null;
+  invoiceDate: string | null;
+  isCreditDebitNote: boolean;
+  isVoided: boolean;
+  notes: string | null;
+  lines: TransactionLineView[];
+  totals: {
+    actualGoodsPaise: number;
+    currentGoodsPaise: number;
+    gstPaise: number;
+    cgstPaise: number;
+    sgstPaise: number;
+    igstPaise: number;
+    discountPaise: number;
+    freightPaise: number;
+    roundOffPaise: number;
+    actualPostedPaise: number;
+    currentPostedPaise: number;
+  };
+}
+
+export const getTransaction = (id: number) =>
+  api<{ transaction: TransactionDetail }>(`/transactions/${id}`);
+
 export const voidSource = (kind: 'transaction' | 'movement', id: number) =>
   api<{ voided: { reversalCount: number } }>(
     `/${kind === 'transaction' ? 'transactions' : 'movements'}/${id}/void`,

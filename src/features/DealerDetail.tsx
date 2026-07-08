@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Ban, HandCoins, Plus } from 'lucide-react';
+import { ArrowLeft, Ban, ChevronDown, HandCoins, Plus } from 'lucide-react';
 import {
   getDealer,
   getLedger,
@@ -11,6 +11,7 @@ import {
 } from '../lib/api';
 import { BalanceHeadline, InlineBalance, MoneyDisplay } from '../components/money';
 import { AddMoneyForm, AddTransactionForm, Modal } from './forms';
+import { TransactionDetailPanel } from './TransactionDetail';
 
 type VoidTarget = { kind: 'transaction' | 'movement'; id: number; label: string };
 
@@ -39,6 +40,7 @@ export function DealerDetail({
   const [modal, setModal] = useState<'txn' | 'money' | null>(null);
   const [voidTarget, setVoidTarget] = useState<VoidTarget | null>(null);
   const [voiding, setVoiding] = useState(false);
+  const [expanded, setExpanded] = useState<number | null>(null);
 
   const loadHeader = useCallback(() => {
     getDealer(dealerId)
@@ -173,62 +175,77 @@ export function DealerDetail({
             const delta = isDebit ? e.debitPaise : e.creditPaise;
             const labelText = e.label === 'adjustment' ? 'reversal' : (e.label ?? '');
             return (
-              <li
-                key={e.id}
-                className={`flex items-center gap-3 px-4 py-3 ${e.isVoided ? 'opacity-60' : ''}`}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-surface-container px-2 py-0.5 text-label-caps uppercase text-on-surface-variant">
-                      {labelText}
-                    </span>
-                    {e.isVoided && (
-                      <span className="rounded-full bg-negative-container px-2 py-0.5 text-label-caps uppercase text-on-negative-container">
-                        Voided
+              <li key={e.id} className={e.isVoided ? 'opacity-60' : ''}>
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-surface-container px-2 py-0.5 text-label-caps uppercase text-on-surface-variant">
+                        {labelText}
                       </span>
-                    )}
-                    <span className="truncate text-body-md text-on-surface-variant">
-                      {e.description}
+                      {e.isVoided && (
+                        <span className="rounded-full bg-negative-container px-2 py-0.5 text-label-caps uppercase text-on-negative-container">
+                          Voided
+                        </span>
+                      )}
+                      <span className="truncate text-body-md text-on-surface-variant">
+                        {e.description}
+                      </span>
+                    </span>
+                    <span className="text-label-caps text-on-surface-variant">
+                      {fmtDate(e.entryDate)}
                     </span>
                   </span>
-                  <span className="text-label-caps text-on-surface-variant">
-                    {fmtDate(e.entryDate)}
+                  <span className="text-right">
+                    <span
+                      className={`block font-medium ${
+                        e.isVoided
+                          ? 'text-on-surface-variant line-through'
+                          : isDebit
+                            ? 'text-positive'
+                            : 'text-negative'
+                      }`}
+                    >
+                      {isDebit ? '+' : '−'}
+                      <MoneyDisplay paise={delta} />
+                    </span>
+                    <span className="text-label-caps text-on-surface-variant">
+                      <InlineBalance balancePaise={e.runningBalancePaise} />
+                    </span>
                   </span>
-                </span>
-                <span className="text-right">
-                  <span
-                    className={`block font-medium ${
-                      e.isVoided
-                        ? 'text-on-surface-variant line-through'
-                        : isDebit
-                          ? 'text-positive'
-                          : 'text-negative'
-                    }`}
-                  >
-                    {isDebit ? '+' : '−'}
-                    <MoneyDisplay paise={delta} />
-                  </span>
-                  <span className="text-label-caps text-on-surface-variant">
-                    <InlineBalance balancePaise={e.runningBalancePaise} />
-                  </span>
-                </span>
-                {e.voidable && e.sourceId != null && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setVoidTarget({
-                        kind: e.sourceType as 'transaction' | 'movement',
-                        id: e.sourceId!,
-                        label: `${labelText} ${e.description ?? ''}`.trim(),
-                      })
-                    }
-                    className="shrink-0 rounded-lg p-2 text-on-surface-variant hover:bg-negative-container hover:text-on-negative-container"
-                    aria-label="Void entry"
-                    title="Void"
-                  >
-                    <Ban size={16} />
-                  </button>
-                )}
+                  {e.sourceType === 'transaction' && e.sourceId != null && (
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(expanded === e.sourceId ? null : e.sourceId)}
+                      className="shrink-0 rounded-lg p-2 text-on-surface-variant hover:bg-surface-container"
+                      aria-label="Transaction details"
+                    >
+                      <ChevronDown
+                        size={16}
+                        className={`transition-transform ${expanded === e.sourceId ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                  )}
+                  {e.voidable && e.sourceId != null && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVoidTarget({
+                          kind: e.sourceType as 'transaction' | 'movement',
+                          id: e.sourceId!,
+                          label: `${labelText} ${e.description ?? ''}`.trim(),
+                        })
+                      }
+                      className="shrink-0 rounded-lg p-2 text-on-surface-variant hover:bg-negative-container hover:text-on-negative-container"
+                      aria-label="Void entry"
+                      title="Void"
+                    >
+                      <Ban size={16} />
+                    </button>
+                  )}
+                </div>
+                {e.sourceType === 'transaction' &&
+                  e.sourceId != null &&
+                  expanded === e.sourceId && <TransactionDetailPanel transactionId={e.sourceId} />}
               </li>
             );
           })}

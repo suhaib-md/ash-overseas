@@ -205,4 +205,48 @@ describe('dealer + transaction + ledger API', () => {
     expect(original).toMatchObject({ isVoided: true, voidable: false });
     expect(body.entries.some((e) => e.sourceType === 'adjustment')).toBe(true);
   });
+
+  it('transaction detail exposes the CGST/SGST split summing to total GST + round-off', async () => {
+    const created = await post('/api/dealers', { name: 'GST', type: 'both' });
+    const { dealer } = (await created.json()) as { dealer: { id: number } };
+    const sale = await post('/api/transactions', {
+      dealerId: dealer.id,
+      date: '2026-06-02',
+      mode: 'sale',
+      taxType: 'intra',
+      lines: [
+        {
+          itemName: 'Castings',
+          quantity: 9510,
+          actualRatePaise: R(33),
+          currentRatePaise: R(24),
+          gstRatePercent: 18,
+        },
+      ],
+    });
+    const { transaction } = (await sale.json()) as { transaction: { transactionId: number } };
+
+    const detail = await req(`/api/transactions/${transaction.transactionId}`);
+    const body = (await detail.json()) as {
+      transaction: {
+        taxType: string;
+        totals: {
+          cgstPaise: number;
+          sgstPaise: number;
+          gstPaise: number;
+          igstPaise: number;
+          roundOffPaise: number;
+          currentPostedPaise: number;
+        };
+      };
+    };
+    const t = body.transaction.totals;
+    expect(body.transaction.taxType).toBe('intra');
+    expect(t.cgstPaise).toBe(2054160); // ₹20,541.60 each
+    expect(t.sgstPaise).toBe(2054160);
+    expect(t.cgstPaise + t.sgstPaise).toBe(t.gstPaise);
+    expect(t.igstPaise).toBe(0);
+    expect(t.roundOffPaise).toBe(-20);
+    expect(t.currentPostedPaise).toBe(R(269323));
+  });
 });

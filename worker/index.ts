@@ -11,6 +11,7 @@ import {
 import { describeBalance, type Account } from '../shared/ledger';
 import { createDealer, getDealer, updateDealer, archiveDealer, listDealers } from './repo/dealers';
 import { getBalance, getDealerBalances, getLedger } from './repo/ledger';
+import { getTransactionDetail } from './repo/transactions';
 import { postTransaction, postMovement, voidSource } from './ledger/post';
 
 export interface Env {
@@ -129,6 +130,13 @@ app.get('/api/dealers/:id/ledger', async (c) => {
 });
 
 // --- Transactions & money movements ----------------------------------------
+
+app.get('/api/transactions/:id', async (c) => {
+  const id = intParam(c.req.param('id'), 'id');
+  const detail = await getTransactionDetail(getDb(c.env.DB), id);
+  if (!detail) throw new HttpError(404, { error: 'transaction_not_found' });
+  return c.json({ transaction: detail });
+});
 
 app.post('/api/transactions', async (c) => {
   const input = parse(transactionCreateSchema, await jsonBody(c));
