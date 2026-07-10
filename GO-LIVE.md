@@ -1,152 +1,192 @@
 # ASH Overseas — Production Go-Live Runbook
 
-The one-time steps to take the app from "code-complete" to "safely live and handed off".
-Do them **in this order** — later steps depend on earlier ones. Everything here needs your
-Cloudflare/GitHub accounts, so it can't be scripted for you.
+Every one-time step to take the app from "code-complete" to "live behind login and handed off".
+Do them **in order** — later steps depend on earlier ones. Everything needs your Cloudflare/GitHub
+accounts, so it can't be scripted for you.
 
-> **Golden rule:** deploy **and** put it behind Access **before entering any real financial data**.
-> There's a brief window where the app is deployed but not yet gated; that's fine while it's empty.
+> **Golden rule:** deploy **and** put it behind Cloudflare Access **before entering any real
+> financial data.** There's a short window where it's deployed but not yet gated — fine while empty.
 
 Facts you'll reuse:
 
 - Repo: `github.com/suhaib-md/ash-overseas`
-- Prod Worker name: `ash-overseas-prod` · prod D1: `ash-overseas-prod` (`7385f774-…`)
+- Prod Worker: `ash-overseas-prod` · prod D1: `ash-overseas-prod` (`7385f774-…`)
 
 ---
 
-## Step 0 — Prerequisites (5 min)
+## Step 1 — Pre-flight (2 min)
 
 ```sh
-node --version              # ≥ 22.15 (you have 24)
-npx wrangler whoami         # confirms you're logged in; else: npx wrangler login
-pnpm install && pnpm test:all && pnpm build   # everything green
+node --version            # ≥ 22.15 (you have 24)
+npx wrangler whoami       # logged in? else: npx wrangler login
+pnpm install && pnpm test:all && pnpm build   # all green
 ```
 
 ---
 
-## Step 1 — Deploy production
-
-(Backups need **no provisioning** — they're card-free: Time Travel + `pnpm db:export`. See Step 3.)
+## Step 2 — Deploy to Cloudflare (production)
 
 ```sh
-pnpm db:migrate:prod                       # create the schema in the prod D1 (answer "yes")
-npx wrangler deploy --env production        # deploys the Worker + SPA
+pnpm db:migrate:prod                    # creates the schema in the prod D1 (type "yes")
+npx wrangler deploy --env production     # uploads Worker + SPA
 ```
 
-Wrangler prints a URL like `https://ash-overseas-prod.<your-subdomain>.workers.dev`. Open it —
-you should see the app (empty). **It is not yet protected** — don't add real data. Continue to
-Step 3 immediately.
+Wrangler prints a URL: `https://ash-overseas-prod.<your-subdomain>.workers.dev`. Open it — the app
+loads (empty). **It is NOT protected yet — don't add real data.** Continue straight to Step 4.
+
+If a later code change needs redeploying, it's just `npx wrangler deploy --env production` again.
 
 ---
 
-## 1 — Authentication: Cloudflare Access (email one-time PIN)
+## Step 3 — Put it on a custom domain (required for auth)
 
-Access attaches to a **hostname in a zone you own**, so it can't gate a bare `*.workers.dev` URL.
-You need a **custom domain on Cloudflare**.
+Cloudflare Access can only gate a **hostname in a zone you own** — it cannot protect a bare
+`*.workers.dev` URL. So you need a domain in this Cloudflare account.
 
-### 1a. Put the app on a custom domain
+- **Have a domain here already?** Dashboard → **Workers & Pages → `ash-overseas-prod` → Settings →
+  Domains & Routes → Add → Custom domain** → e.g. `ledger.yourdomain.com`. Cloudflare issues the TLS
+  cert automatically (takes a minute).
+- **No domain?** Cheapest path: **Dashboard → Domain Registration → Register Domain** (Cloudflare
+  Registrar sells at wholesale cost, ~$5–10/yr, no markup), or add a domain you already own
+  (Dashboard → Add a site → Free plan → change nameservers). Then do the "Add custom domain" step
+  above.
+- **Really don't want a domain?** Then don't deploy publicly — run it locally (`pnpm build && pnpm
+  preview`) on your own machine/home network only. You lose phone-on-the-go access, but it needs no
+  Access/domain. (Not recommended vs. a $8 domain.)
 
-- If you have a domain in this Cloudflare account: Dashboard → **Workers & Pages** →
-  `ash-overseas-prod` → **Settings → Domains & Routes → Add → Custom domain** →
-  e.g. `ledger.yourdomain.com`. Cloudflare provisions the cert automatically.
-- No domain yet? Register or move one into this Cloudflare account first (even a cheap domain, or a
-  subdomain of one you already manage here). _Access requires this — there's no secure way to gate a
-  plain workers.dev URL._
+From here, use `https://ledger.yourdomain.com` as the app URL.
 
-### 1b. Create the Zero Trust org (first time only)
+---
 
-Dashboard → **Zero Trust** (or `one.dash.cloudflare.com`) → pick a **team name**. Your **team
-domain** becomes `TEAMNAME.cloudflareaccess.com` — note it (this is `CF_ACCESS_TEAM_DOMAIN`).
-The free plan (≤ 50 users) is enough.
+## Step 4 — Authentication: Cloudflare Access (email one-time PIN)
 
-### 1c. Turn on the email PIN login method
+### 4a. Create your Zero Trust org (first time only)
 
-Zero Trust → **Settings → Authentication → Login methods** → ensure **One-time PIN** is enabled
-(it is by default). No identity provider needed.
+Dashboard → **Zero Trust** (or `one.dash.cloudflare.com`). If prompted, pick a **team name** and the
+free plan. Your **team domain** is `TEAMNAME.cloudflareaccess.com` — write it down, it's the
+`CF_ACCESS_TEAM_DOMAIN` secret.
 
-### 1d. Create the Access application
+### 4b. Confirm email PIN login is on
 
-Zero Trust → **Access → Applications → Add an application → Self-hosted**.
+Zero Trust → **Settings → Authentication → Login methods** → **One-time PIN** should be present
+(on by default). No identity provider needed.
 
-- **Application name:** ASH Overseas
-- **Session duration:** e.g. 24 hours (forces re-auth daily — good for a phone)
-- **Public hostname:** `ledger.yourdomain.com` (from 1a)
-- **Add policy:** Action **Allow**; **Include → Emails →** `suhaib.muhammed2002@gmail.com`
-  (add the maintainer's email too if you want them to log in). Name it "Owner".
-- Save.
+### 4c. Create the Access application
 
-### 1e. Grab the AUD and set the secrets
+Zero Trust → **Access → Applications → Add an application → Self-hosted**:
 
-- Open the app → **Overview** → copy the **Application Audience (AUD) Tag** (a long hex string) →
-  this is `CF_ACCESS_AUD`.
-- Set both as Worker secrets and redeploy:
+- **Name:** ASH Overseas
+- **Session duration:** 24 hours (daily re-login — sensible for a phone)
+- **Application domain:** `ledger.yourdomain.com` (from Step 3)
+- **Next → Add a policy:** name "Owner"; Action **Allow**; **Include → Emails →** your email
+  `suhaib.muhammed2002@gmail.com` (add the maintainer's email too, if they should log in)
+- Save / Add application.
+
+### 4d. Get the AUD tag and set the secrets
+
+- Open the app → **Overview → Application Audience (AUD) Tag** → copy the long hex string. That's
+  `CF_ACCESS_AUD`.
+- Set both as Worker secrets, then redeploy:
   ```sh
   npx wrangler secret put CF_ACCESS_TEAM_DOMAIN --env production   # paste TEAMNAME.cloudflareaccess.com
   npx wrangler secret put CF_ACCESS_AUD --env production           # paste the AUD tag
   npx wrangler deploy --env production
   ```
 
-### 1f. Verify
+### 4e. Verify, then lock the back door
 
-- Visit `https://ledger.yourdomain.com` in a fresh browser → you get the **Access email-OTP** page →
-  enter your email → paste the code → the app loads.
-- Confirm the bypass is closed: `curl https://ledger.yourdomain.com/api/dealers` (no login) → should
-  be blocked by Access (302/403), and even if reached, the Worker returns **403** without a valid JWT.
-- **Turn off the naked preview URL:** Worker → Settings → Domains & Routes → disable the
-  `workers.dev` route so only the Access-protected domain serves the app.
+- Visit `https://ledger.yourdomain.com` in a fresh/incognito browser → you get the **email-OTP**
+  screen → enter your email → paste the code → the app loads.
+- **Disable the naked preview URL:** Workers & Pages → `ash-overseas-prod` → Settings → Domains &
+  Routes → disable the `workers.dev` route so only the Access-protected domain serves the app.
 
-✅ Now it's safe to enter real data.
+✅ **Now it's safe to enter real data.**
 
 ---
 
-## 3 — Backups (card-free) + verify a restore once
+## Step 5 — Backups + verify a restore (card-free, no R2)
 
-No R2, no card. Two layers:
+Two layers:
 
-- **Time Travel** (instant, built-in): restore the live DB to any moment in the last 30 days —
-  `npx wrangler d1 time-travel restore ash-overseas-prod --env production --timestamp="<ISO>"`.
-- **SQL dumps** for long-term/off-store: run `pnpm db:export` (writes `backup.sql`) and keep it in
-  Drive / an external drive / a private repo. Automate with Windows Task Scheduler or the opt-in
-  `.github/workflows/backup.yml` (add `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` repo secrets).
+- **Time Travel** (built-in, instant): restore the live DB to any moment in the last 30 days.
+- **SQL dumps** for long-term/off-store retention: `pnpm db:export`.
 
-**Prove a restore works, once:**
+**Prove a restore works — do this once:**
 
 ```sh
-pnpm db:export                                   # → backup.sql (schema + data)
+pnpm db:export                                   # → backup.sql (schema + data; gitignored)
 npx wrangler d1 create ash-overseas-restore-check
-npx wrangler d1 execute ash-overseas-restore-check --remote --file backup.sql   # no migrations — dump has schema
+npx wrangler d1 execute ash-overseas-restore-check --remote --file backup.sql   # dump has schema; no migrations
 npx wrangler d1 execute ash-overseas-restore-check --remote --command "SELECT count(*) FROM dealers;"
 npx wrangler d1 delete ash-overseas-restore-check
 ```
 
----
+Store each `backup.sql` wherever you keep important files (Drive / external drive / private repo).
+Automate with Windows Task Scheduler, or the GitHub Action in Step 6.
 
-## 4 — Hardening finish (on the live URL)
+Time Travel restore, if ever needed:
 
-1. **Security-headers scan:** run the deployed URL through a scanner
-   (e.g. `securityheaders.com` or Mozilla Observatory `observatory.mozilla.org`). You should see CSP,
-   HSTS, X-Content-Type-Options, X-Frame-Options all present (they come from `public/_headers`). Fix
-   any gaps by editing `public/_headers` and redeploying.
-2. **Rate limiting / WAF:** Dashboard → your domain → **Security → WAF**. Add a simple
-   **Rate limiting rule** (e.g. limit `/api/*` to ~100 requests/min per IP). Access already fronts
-   the app, so this is a backstop.
-3. **Dependabot:** it's already configured (`.github/dependabot.yml`) and CI runs `pnpm audit` — just
-   confirm on GitHub → repo → **Settings → Code security** that Dependabot alerts are **on**.
+```sh
+npx wrangler d1 time-travel restore ash-overseas-prod --env production --timestamp="2026-07-08T09:00:00Z"
+```
 
 ---
 
-## 5 — Handoff to the maintainer
+## Step 6 — GitHub Actions
 
-1. **Repo:** GitHub → repo → **Settings → Collaborators → Add people** → the maintainer's GitHub user.
-2. **Cloudflare:** Dashboard → **Manage Account → Members → Invite Member** → the maintainer's email
-   → role **Administrator** (free plan allows members). They can then deploy and manage without your
-   credentials.
-3. Point them at [`README.md`](README.md) (maintainer runbook) and [`SETUP.md`](SETUP.md). Confirm
-   they can, unaided: `pnpm install && pnpm test:all`, deploy, take a backup, and restore it.
+### 6a. CI (already active — nothing to configure)
+
+`.github/workflows/ci.yml` runs on every push/PR: typecheck + unit tests + D1 tests + build +
+`pnpm audit`. Check it: GitHub → repo → **Actions** tab → the latest **CI** run should be green.
+If it's red, open the run to see which step failed.
+
+### 6b. Automated backups (opt-in — needs 2 secrets)
+
+`.github/workflows/backup.yml` runs weekly (and on demand) and keeps each DB dump as a downloadable
+artifact (90-day retention). It does nothing until you add the secrets:
+
+1. **Create a scoped Cloudflare API token:** Dashboard → **My Profile** (top-right avatar) →
+   **API Tokens → Create Token → Create Custom Token**.
+   - Name: `ash-overseas-backup`
+   - **Permissions:** `Account` → `D1` → **Edit** (Edit is the safe choice; export is read-only but
+     the D1 group is Read/Edit).
+   - **Account Resources:** Include → your account.
+   - Continue → Create → **copy the token** (shown once).
+2. **Find your Account ID:** run `npx wrangler whoami` (it prints the Account ID), or Dashboard →
+   Workers & Pages → right sidebar **Account ID**.
+3. **Add repo secrets:** GitHub → repo → **Settings → Secrets and variables → Actions → New
+   repository secret**, add two:
+   - `CLOUDFLARE_API_TOKEN` = the token from step 1
+   - `CLOUDFLARE_ACCOUNT_ID` = the id from step 2
+4. **Run it now to test:** Actions tab → **Backup (D1 export)** → **Run workflow** → after it
+   finishes, open the run → **Artifacts** → download `d1-backup-…` (that's your `backup.sql`).
 
 ---
 
-### Quick order recap
+## Step 7 — Hardening (on the live URL)
 
-deploy prod → custom domain → Access app + secrets + redeploy → verify a restore (`pnpm db:export`) →
-headers scan + WAF → invite maintainer. **Don't enter real data until Access is verified.**
+1. **Security-headers scan:** paste `https://ledger.yourdomain.com` into `securityheaders.com` (or
+   Mozilla Observatory). You should see **CSP, HSTS, X-Content-Type-Options, X-Frame-Options** — they
+   come from `public/_headers`. Fix gaps by editing that file + redeploying.
+2. **Rate limiting (WAF):** Dashboard → your domain → **Security → WAF → Rate limiting rules → Create**
+   → e.g. path contains `/api/` → 100 requests / 1 min / per IP → Block. (Access already fronts the
+   app; this is a backstop.)
+3. **Dependabot alerts:** GitHub → repo → **Settings → Code security** → ensure Dependabot alerts +
+   security updates are **enabled** (`.github/dependabot.yml` already opens weekly PRs).
+
+---
+
+## Step 8 — Handoff to the maintainer
+
+1. **Repo:** GitHub → repo → **Settings → Collaborators → Add people** → maintainer's GitHub username.
+2. **Cloudflare:** Dashboard → **Manage Account → Members → Invite Member** → maintainer's email →
+   role **Administrator** (allowed on the free plan). They can now deploy without your credentials.
+3. Point them at [`README.md`](README.md) (maintainer runbook) + this file. Confirm they can, unaided:
+   `pnpm install && pnpm test:all`, deploy, `pnpm db:export`, and restore it.
+
+---
+
+### One-line recap
+
+pre-flight → deploy → custom domain → Access + secrets + redeploy → verify a restore → GitHub
+secrets for backups → headers scan + WAF → invite maintainer. **No real data until Access is verified.**
