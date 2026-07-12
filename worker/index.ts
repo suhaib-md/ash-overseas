@@ -1,3 +1,4 @@
+/// <reference types="@cloudflare/workers-types" />
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
