@@ -21,8 +21,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply ash-overseas-dev --local",
     "db:migrate:dev": "wrangler d1 migrations apply ash-overseas-dev --remote",
-    "db:migrate:prod": "wrangler d1 migrations apply ash-overseas-prod --remote",
-    "db:export": "wrangler d1 export ash-overseas-prod --remote --output backup.sql",
+    "db:migrate:prod": "wrangler d1 migrations apply ash-overseas-prod --remote --env production",
+    "db:export": "wrangler d1 export ash-overseas-prod --remote --env production --output backup.sql",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

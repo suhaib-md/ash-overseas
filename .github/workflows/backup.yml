@@ -30,7 +30,7 @@ jobs:
             echo "No CLOUDFLARE_API_TOKEN secret — skipping (add it + CLOUDFLARE_ACCOUNT_ID to enable)."
             exit 0
           fi
-          pnpm exec wrangler d1 export ash-overseas-prod --remote --output backup.sql
+          pnpm exec wrangler d1 export ash-overseas-prod --remote --env production --output backup.sql
       - name: Upload dump artifact
         if: ${{ hashFiles('backup.sql') != '' }}
         uses: actions/upload-artifact@v4
