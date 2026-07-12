@@ -11,7 +11,7 @@ The full specification lives in `SRS.md`. When in doubt about any business rule,
 - **Phase 0** (foundations & setup) — ✅ complete
 - **Phase 1** (core ledger) — ✅ complete: pure engine + atomic posting layer + dealer/transaction/money-movement APIs + minimal dealer-detail UI. Section 6 passes at both the pure and D1-integration level (55 tests green).
 - **Phase 2** (usability/completeness) — ✅ complete: real routing + Home/nav; full entry flows with draft persistence; void UI (reversal shown); per-transaction GST split (CGST/SGST vs IGST) + round-off; success toasts, item/unit autocomplete, modal a11y, installable PWA (shell-only cache). 59 tests green (43 unit + 16 D1/API).
-- **Phase 3** (auth/hardening/handoff) — code-complete: Access-JWT verification + security headers (CSP/HSTS), card-free backups (D1 Time Travel + `pnpm db:export`, optional GitHub Action) + documented restore, in-app audit-log view, CI (typecheck/tests/build/audit) + Dependabot, README + maintainer + GO-LIVE runbooks. 62 tests green. **Remaining is owner/maintainer provisioning** (deploy, add a custom domain, create the Cloudflare Access app, run an observatory scan, verify a restore, invite the maintainer, set WAF/rate-limit rules) — see GO-LIVE.md.
+- **Phase 3** (auth/hardening/handoff) — code-complete: **single-user password auth** (PBKDF2 hash + HMAC-signed session cookie, all via Web Crypto so it runs in workerd and the Node test runner) replacing the earlier Cloudflare Access plan (Access needs a custom domain the owner wants to avoid; a bare `workers.dev` URL can now go live), security headers (CSP/HSTS), card-free backups (D1 Time Travel + `pnpm db:export`, optional GitHub Action) + documented restore, in-app audit-log view, CI (typecheck/tests/build/audit) + Dependabot, README + maintainer + GO-LIVE runbooks. 62 tests green. **Remaining is owner/maintainer provisioning** (deploy, set the login password secrets, optional custom domain, run an observatory scan, verify a restore, invite the maintainer, optional WAF/rate-limit rules) — see GO-LIVE.md.
 
 The detailed, sequenced build plan (sub-phases, steps, and "Done when" gates) is in **[Delivery Plan (Detailed)](#delivery-plan-detailed)** at the end of this file. Cross-cutting engineering, security, and UI/UX rules live in their own sections and are referenced from the phases.
 
@@ -123,13 +123,13 @@ Deployment path verified current **2026-07** — the Cloudflare + Next.js story 
 | Migrations | `drizzle-kit generate` authors the SQL; **`wrangler d1 migrations apply`** applies it (`--local` for dev, remote for prod).                                                                                                          | Never hand-edit an already-applied migration; add a new one.                                                                                                                                                                                                                                                   |
 | Validation | **Zod** at every server boundary                                                                                                                                                                                                     | Rejects non-integer money and out-of-range input — see Security Blueprint.                                                                                                                                                                                                                                     |
 | Testing    | **Vitest** for the pure ledger engine; **`@cloudflare/vitest-pool-workers`** for D1-backed integration tests                                                                                                                         | The Section 6 scenarios are the gating suite.                                                                                                                                                                                                                                                                  |
-| Auth       | **Cloudflare Access** email one-time-PIN gating the whole app at the edge (free tier ≤50 users, no IdP, no custom auth code), **plus** server-side verification of the `Cf-Access-Jwt-Assertion` JWT.                                | See Security Blueprint L1. Hashed-password-in-DB is a fallback only if Access is unavailable.                                                                                                                                                                                                                  |
+| Auth       | **Single-user password** gating the whole app: a PBKDF2-SHA256 password hash (`AUTH_PASSWORD_HASH`) + an HMAC-signed session cookie (`AUTH_SECRET`), implemented with Web Crypto so it runs in both workerd and the Node test runner. Cloudflare Access was the original plan but needs a custom domain the owner wants to avoid; the password gate protects a bare `workers.dev` URL with no domain, no IdP. | See Security Blueprint L1. Both secrets unset ⇒ auth disabled (local-dev convenience only). Session TTL 30 days; ~½s delay + 401 on a wrong password.                                                                                                                                                          |
 | Backups    | **Card-free** (R2 needs a payment card, so it is NOT used): D1 **Time Travel** (always-on, 30-day PITR, no cost) **plus** `wrangler d1 export` SQL dumps (`pnpm db:export`), optionally automated by a GitHub Action to an artifact. | Satisfies NFR-B1/B2/B3. Restore must be _performed and verified_ before handoff.                                                                                                                                                                                                                               |
 | Money      | Integer paise — no exceptions                                                                                                                                                                                                        | See Money Rule + Engineering Foundations.                                                                                                                                                                                                                                                                      |
 
 Secrets and bindings (D1, R2, Access) are configured through Cloudflare's environment (`wrangler secret`, the dashboard, or `.dev.vars` locally — `.dev.vars` is gitignored), **never** committed to source control.
 
-**Why these choices (research summary):** OpenNext-on-Workers is the path the Next.js team and Cloudflare now recommend, replacing the deprecated `next-on-pages`; D1 Time Travel provides free 30-day PITR with scheduled R2 export for longer retention; Drizzle authors migrations that `wrangler` applies; Cloudflare Access email-OTP gates a single-user internal tool for free with no custom auth code.
+**Why these choices (research summary):** OpenNext-on-Workers is the path the Next.js team and Cloudflare now recommend, replacing the deprecated `next-on-pages`; D1 Time Travel provides free 30-day PITR with scheduled R2 export for longer retention; Drizzle authors migrations that `wrangler` applies; a single-user password gate (PBKDF2 + signed session cookie) protects the tool on a bare `workers.dev` URL — chosen over Cloudflare Access, which would have required buying/configuring a custom domain.
 
 ---
 
@@ -231,11 +231,11 @@ These rules are correctness-critical for a financial ledger. Treat a violation a
 
 This app holds both **real and declared** financial figures for a business — a leak is materially damaging. Authentication is a Phase-3 deliverable, but these constraints **bind from Phase 0**. Defense in depth across four layers:
 
-### Layer 1 — Edge (before the app reaches its own code)
+### Layer 1 — Login gate (the app authenticates every request itself)
 
-- **Cloudflare Access email one-time-PIN** gates the entire application. Only the owner's email is on the Access policy; there is no public route and no self-service sign-up (NFR-S1/S5).
-- **Verify the Access JWT inside the app** — Access-protected ≠ app-trusting. Validate the `Cf-Access-Jwt-Assertion` header on every request in middleware (issuer = your team domain, audience = the app's AUD tag, signature against Cloudflare's rotating public keys). This closes the "attacker hits the `*.workers.dev` URL directly" bypass. Reject with 403 when absent or invalid.
-- HTTPS only; **HSTS** with a long `max-age` + preload (NFR-S4). Cloudflare WAF + rate-limiting rules sit in front as a backstop even though the app is already behind Access.
+- **Single-user password** gates the entire application — every page and every `/api` route. There is no public route and no self-service sign-up (NFR-S1/S5). Auth is enforced **in the Worker**, so a bare `workers.dev` URL is fully protected with no custom domain required (this is why Cloudflare Access was dropped — it can only gate a hostname in a zone you own).
+- **How it works** (`worker/auth.ts`): the owner's password is stored only as a PBKDF2-SHA256 hash (`AUTH_PASSWORD_HASH`, format `pbkdf2$<iters>$<salt>$<hash>`); a correct login mints an **HMAC-signed session cookie** (`AUTH_SECRET`) with a 30-day expiry, `HttpOnly; Secure; SameSite=Strict`. Every `/api/*` request (except `/api/auth/*`) verifies the cookie's signature and expiry and returns **401** otherwise. A wrong password gets a deliberate ~½s delay before its 401. If either secret is unset the gate is **disabled** — intentional for local dev only; production always sets both.
+- HTTPS only; **HSTS** with a long `max-age` + preload (NFR-S4). Cloudflare WAF + rate-limiting rules can sit in front as a backstop (needs a custom domain; otherwise the login's throttled wrong-password path is the backstop).
 
 ### Layer 2 — Transport & headers (set on every response)
 
@@ -247,9 +247,9 @@ This app holds both **real and declared** financial figures for a business — a
 ### Layer 3 — Application
 
 - **Validate every input with Zod at the server boundary.** Never trust the client. Money fields accept **integer paise only** — reject floats, `NaN`, disallowed negatives, and out-of-range values. Re-run every SRS §10.8 rule server-side even if the client also checks.
-- Every ledger-mutating endpoint is behind the Access-JWT check; there is no unauthenticated write path.
+- Every ledger-mutating endpoint is behind the session-cookie check; there is no unauthenticated write path.
 - **SQL injection:** only parameterized Drizzle queries — never string-concatenate SQL.
-- **CSRF:** verify `Origin`/`Sec-Fetch-Site` on state-changing routes; cookies `SameSite=Strict`; same-origin POST. (The Access JWT already scopes callers, but keep this.)
+- **CSRF:** verify `Origin`/`Sec-Fetch-Site` on state-changing routes; cookies `SameSite=Strict`; same-origin POST. (The `SameSite=Strict` session cookie already blocks cross-site sends, but keep this.)
 - **No money or dealer PII in logs, error traces, or analytics (NFR-S3).** A logging helper redacts amount / name / GSTIN fields. Do not wire a third-party analytics or error-reporting SaaS that would receive request bodies; if one is ever added, scrub payloads first.
 - The **audit log is append-only**, records who/what/when with before/after JSON (NFR-A1), and never stores secrets.
 
@@ -263,7 +263,7 @@ This app holds both **real and declared** financial figures for a business — a
 
 ### Threat model (what we defend against)
 
-Unauthorized read of financial data (→ Access + JWT verify + no public route); tampering with historical figures (→ append-only + audit + replay); accidental data loss (→ Time Travel + R2 export + tested restore); secret leakage (→ env-only secrets, none in logs); dependency compromise (→ lockfile, `npm audit`, minimal deps). **Out of model:** nation-state adversaries and theft of the owner's already-unlocked phone (mitigated only by an Access re-auth timeout).
+Unauthorized read of financial data (→ password gate + signed session cookie + no public route); tampering with historical figures (→ append-only + audit + replay); accidental data loss (→ Time Travel + SQL-dump export + tested restore); secret leakage (→ env-only secrets, none in logs); dependency compromise (→ lockfile, `npm audit`, minimal deps). **Out of model:** nation-state adversaries and theft of the owner's already-unlocked phone (mitigated only by the 30-day session expiry / logout).
 
 ---
 
@@ -411,7 +411,7 @@ _Goal: pleasant and complete to operate on a phone. Implements the UI/UX Bluepri
 
 _Goal: safe to run unattended and to hand to a maintainer._
 
-**3.1 Authentication** — Cloudflare Access email-OTP over the whole app; server-side Access-JWT verification middleware; security headers; no public route (Security Blueprint L1–L2). **Done when:** unauthenticated and direct-Worker-URL requests are rejected (403) and the owner's OTP login works.
+**3.1 Authentication** — single-user password over the whole app: PBKDF2 password hash + HMAC-signed session cookie enforced in the Worker on every `/api` route; security headers; no public route (Security Blueprint L1–L2). **Done when:** unauthenticated `/api` requests are rejected (401), a wrong password is rejected, and a correct password mints a working session.
 
 **3.2 Backups & verified restore** — card-free (no R2): D1 Time Travel + `wrangler d1 export` SQL dumps (`pnpm db:export`), optionally automated via a GitHub Action; **document and actually perform** a restore into a scratch DB (NFR-B1..B3). **Done when:** a restore from a dump reproduces current data and the procedure is written down.
 

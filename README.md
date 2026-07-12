@@ -18,8 +18,8 @@ Authoritative spec: [`SRS.md`](SRS.md). Engineering/security/UX rules and the ph
 ## Tech stack
 
 Vite + React 19 SPA and a **Hono** API on one **Cloudflare Worker** (via `@cloudflare/vite-plugin`),
-**D1** (SQLite) with **Drizzle**, **Zod** validation, **Tailwind v4**, **react-router**. Auth is
-**Cloudflare Access** email-OTP + server-side JWT verification. All money is **integer paise**.
+**D1** (SQLite) with **Drizzle**, **Zod** validation, **Tailwind v4**, **react-router**. Auth is a
+**single-user password** (PBKDF2 hash + HMAC-signed session cookie). All money is **integer paise**.
 
 ## Quick start
 
@@ -55,7 +55,7 @@ shared/    Pure, DB-free logic shared by client + worker:
              schemas.ts (Zod). This is where correctness lives — Section 6 tests exercise it.
 worker/    Cloudflare Worker: index.ts (Hono routes + middleware), db/ (Drizzle schema+client),
              ledger/post.ts (atomic db.batch posting layer), repo/ (dealers, ledger, transactions,
-             audit), auth.ts (Access JWT).
+             audit), auth.ts (password hash + session cookie).
 src/       React SPA: components/, features/ (DealerList, DealerDetail, forms, AuditLog), lib/api.ts.
 migrations/  Drizzle-generated SQL (applied by wrangler).
 ```
@@ -73,20 +73,20 @@ typecheck + both suites + build + `pnpm audit` on every push/PR.
 
 ## Security
 
-- **Cloudflare Access** (email-OTP) gates the whole app at the edge; the Worker also verifies the
-  `Cf-Access-Jwt-Assertion` JWT (`CF_ACCESS_TEAM_DOMAIN` / `CF_ACCESS_AUD` secrets) so the raw
-  `*.workers.dev` URL can't bypass it.
+- **Single-user password** gates every page and `/api` route: PBKDF2-hashed password
+  (`AUTH_PASSWORD_HASH`) + an HMAC-signed session cookie (`AUTH_SECRET`). No unauthenticated read or
+  write path; a missing secret disables auth (dev only). See [GO-LIVE.md](GO-LIVE.md) Step 3.
 - Security headers (CSP `default-src 'self'`, HSTS, nosniff, `frame-ancestors 'none'`) via
   `public/_headers` (SPA) and `secureHeaders` (API).
 - Zod at every boundary; integer-paise only; no money/PII in logs; parameterized queries.
-- **Do not deploy to a reachable URL until Access is configured** (SETUP.md §7).
+- **Do not enter real data until the login password is set** (SETUP.md §7 / GO-LIVE.md Step 3).
 
 ---
 
 ## Maintainer runbook
 
 - **Deploy prod:** `wrangler deploy --env production` (after `pnpm db:migrate:prod`). First-time
-  Cloudflare setup (D1, R2, Access) is in [SETUP.md](SETUP.md).
+  Cloudflare setup (D1) is in [SETUP.md](SETUP.md); the login-password secrets are in GO-LIVE.md Step 3.
 - **Run everything:** `pnpm test:all && pnpm typecheck && pnpm build`.
 - **Backups/restore:** D1 Time Travel + `pnpm db:export` SQL dumps (card-free, no R2) — commands
   and the verified restore procedure are in [SETUP.md → Backups & restore](SETUP.md).
@@ -100,4 +100,5 @@ typecheck + both suites + build + `pnpm audit` on every push/PR.
 - **Secrets** live only in `wrangler secret` / `.dev.vars` (gitignored) — never in the repo. Rotate
   on any suspicion.
 - **Incident basics:** suspected bad data → restore via Time Travel to just before it; suspected
-  key leak → rotate the D1 API token + Access, redeploy.
+  key/password leak → re-run `node scripts/hash-password.mjs`, `wrangler secret put AUTH_PASSWORD_HASH`
+  + `AUTH_SECRET` (rotating `AUTH_SECRET` logs out every session), rotate the D1 API token, redeploy.

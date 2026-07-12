@@ -85,3 +85,7 @@ export const listQuerySchema = z.object({
   activity: z.enum(['purchase', 'sale', 'all']).default('all'),
   q: z.string().max(200).optional(),
 });
+
+export const loginSchema = z.object({
+  password: z.string().min(1).max(256),
+});

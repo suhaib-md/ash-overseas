@@ -1,11 +1,36 @@
+import { useCallback, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router';
 import { ShellLayout } from './components/AppShell';
 import { Home } from './features/Home';
 import { DealerList } from './features/DealerList';
 import { DealerDetail } from './features/DealerDetail';
 import { AuditLog } from './features/AuditLog';
+import { Login } from './features/Login';
+import { authMe, setUnauthorizedHandler } from './lib/api';
 
 export function App() {
+  const [status, setStatus] = useState<'loading' | 'authed' | 'login'>('loading');
+
+  const check = useCallback(() => {
+    authMe()
+      .then((r) => setStatus(r.authenticated ? 'authed' : 'login'))
+      .catch(() => setStatus('login'));
+  }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => setStatus('login'));
+    check();
+  }, [check]);
+
+  if (status === 'loading') {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-surface text-on-surface-variant">
+        Loading…
+      </div>
+    );
+  }
+  if (status === 'login') return <Login onSuccess={check} />;
+
   return (
     <Routes>
       <Route element={<ShellLayout />}>

@@ -42,11 +42,21 @@ export interface LedgerEntry {
   voidable: boolean;
 }
 
+let unauthorizedHandler: (() => void) | null = null;
+/** Registered by the auth gate so any 401 (expired session) bounces back to login. */
+export function setUnauthorizedHandler(fn: () => void) {
+  unauthorizedHandler = fn;
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     headers: { 'content-type': 'application/json' },
     ...init,
   });
+  if (res.status === 401) {
+    unauthorizedHandler?.();
+    throw new Error('Please log in');
+  }
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {
@@ -147,6 +157,23 @@ export interface AuditEntry {
 }
 
 export const getAudit = () => api<{ entries: AuditEntry[] }>(`/audit`);
+
+// --- Auth ------------------------------------------------------------------
+
+export const authMe = () => api<{ authenticated: boolean; required: boolean }>(`/auth/me`);
+
+export async function login(password: string): Promise<void> {
+  // Raw fetch (not api()) so a wrong-password 401 doesn't trip the global handler.
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  if (res.status === 401) throw new Error('Incorrect password');
+  if (!res.ok) throw new Error('Login failed');
+}
+
+export const logout = () => fetch('/api/auth/logout', { method: 'POST' });
 
 export const voidSource = (kind: 'transaction' | 'movement', id: number) =>
   api<{ voided: { reversalCount: number } }>(

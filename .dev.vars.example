@@ -9,6 +9,7 @@
 # CLOUDFLARE_DATABASE_ID=""
 # CLOUDFLARE_D1_TOKEN=""
 #
-# --- Phase 3: Cloudflare Access JWT verification ---
-# CF_ACCESS_TEAM_DOMAIN=""   # e.g. your-team.cloudflareaccess.com
-# CF_ACCESS_AUD=""           # the Access application's Application Audience (AUD) tag
+# --- Single-user login (Phase 3). Leave unset for open local dev; set both to test login. ---
+# Generate with: node scripts/hash-password.mjs
+# AUTH_PASSWORD_HASH="pbkdf2$210000$...salt...$...hash..."
+# AUTH_SECRET="...random base64..."

@@ -125,27 +125,24 @@ npx wrangler deploy --env production   # deploys the production worker + binding
 
 ---
 
-## 7. Authentication — Cloudflare Access email OTP (Phase 3)
+## 7. Authentication — single-user password (Phase 3)
 
-This gates the whole app to just the owner's email, for free, with no custom auth code.
-Do this when you reach Phase 3 (see `CLAUDE.md` → Security Blueprint L1).
+The app gates every page and `/api` route behind one password — no domain, no Cloudflare
+Access, no IdP. It reads two Worker secrets: `AUTH_PASSWORD_HASH` (a PBKDF2 hash — the
+plaintext is never stored) and `AUTH_SECRET` (signs the session cookie). If either is
+unset, auth is **disabled** (open) — which is what you want for local dev. The full
+production walkthrough is in [`GO-LIVE.md`](GO-LIVE.md) → Step 3; in short:
 
-1. In the Cloudflare dashboard: **Zero Trust → Access → Applications → Add an application**.
-2. Choose **Self-hosted**. Give it a name (e.g. "ASH Overseas") and set the application
-   domain to your deployed Worker's hostname.
-3. **Identity / login methods:** enable **One-time PIN** (email OTP). No IdP needed.
-4. **Add a policy:** Action **Allow**, rule **Emails** → add **only the owner's email**.
-   (Optionally add the maintainer's email.)
-5. Save. Note the application's **Application Audience (AUD) tag**
-   (Access → your app → Overview) and your **team domain**
-   (`<your-team>.cloudflareaccess.com`).
-6. Put these in `.dev.vars` locally and as Wrangler secrets in production:
+1. Generate both secrets: `node scripts/hash-password.mjs` (blank password = it generates a
+   strong one and prints it once).
+2. Set them in production and redeploy:
    ```sh
-   npx wrangler secret put CF_ACCESS_AUD --env production
-   npx wrangler secret put CF_ACCESS_TEAM_DOMAIN --env production
+   npx wrangler secret put AUTH_PASSWORD_HASH --env production
+   npx wrangler secret put AUTH_SECRET --env production
+   npx wrangler deploy --env production
    ```
-   The app middleware verifies the `Cf-Access-Jwt-Assertion` header against these
-   (defense-in-depth, so the raw `*.workers.dev` URL cannot bypass Access).
+3. To test the login flow **locally**, put the same two lines in `.dev.vars` instead (see
+   `.dev.vars.example`); remove them to go back to the open dev app.
 
 ---
 

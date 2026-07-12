@@ -4,6 +4,7 @@
  */
 import { beforeAll, afterAll, beforeEach, describe, it, expect } from 'vitest';
 import app from './index';
+import { hashPassword } from './auth';
 import { createHarness, type TestHarness } from './test/harness';
 
 let h: TestHarness;
@@ -282,14 +283,37 @@ describe('dealer + transaction + ledger API', () => {
     expect(res.headers.get('x-frame-options')).toBe('DENY');
   });
 
-  it('rejects API requests without an Access JWT when Access is configured (403)', async () => {
-    const res = await app.fetch(
-      new Request('https://test.local/api/dealers', {
-        headers: { 'sec-fetch-site': 'same-origin' },
-      }),
-      { DB: h.d1, CF_ACCESS_TEAM_DOMAIN: 'example.cloudflareaccess.com', CF_ACCESS_AUD: 'aud-tag' },
-    );
-    expect(res.status).toBe(403);
+  it('single-user auth: gates /api, rejects wrong password, accepts a session cookie', async () => {
+    const hash = await hashPassword('correct horse battery');
+    const authEnv = { DB: h.d1, AUTH_PASSWORD_HASH: hash, AUTH_SECRET: 'test-hmac-secret' };
+    const call = (path: string, init?: RequestInit) =>
+      app.fetch(new Request(`https://test.local${path}`, init), authEnv);
+    const headers = { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' };
+
+    // No session → 401 on data
+    expect((await call('/api/dealers')).status).toBe(401);
+
+    // Wrong password → 401
+    const bad = await call('/api/auth/login', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ password: 'nope' }),
+    });
+    expect(bad.status).toBe(401);
+
+    // Right password → 200 + Set-Cookie
+    const ok = await call('/api/auth/login', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ password: 'correct horse battery' }),
+    });
+    expect(ok.status).toBe(200);
+    const setCookie = ok.headers.get('set-cookie') ?? '';
+    expect(setCookie).toContain('ash_session=');
+
+    // Reusing the session cookie → data allowed
+    const cookie = setCookie.split(';')[0]!;
+    expect((await call('/api/dealers', { headers: { cookie } })).status).toBe(200);
   });
 
   it('audit log records creates and voids', async () => {

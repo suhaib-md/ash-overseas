@@ -4,7 +4,7 @@ Every one-time step to take the app from "code-complete" to "live behind login a
 Do them **in order** — later steps depend on earlier ones. Everything needs your Cloudflare/GitHub
 accounts, so it can't be scripted for you.
 
-> **Golden rule:** deploy **and** put it behind Cloudflare Access **before entering any real
+> **Golden rule:** deploy **and** set your login password **before entering any real
 > financial data.** There's a short window where it's deployed but not yet gated — fine while empty.
 
 Facts you'll reuse:
@@ -32,75 +32,66 @@ npx wrangler deploy --env production     # uploads Worker + SPA
 ```
 
 Wrangler prints a URL: `https://ash-overseas-prod.<your-subdomain>.workers.dev`. Open it — the app
-loads (empty). **It is NOT protected yet — don't add real data.** Continue straight to Step 4.
+loads (empty). **It is NOT protected yet — don't add real data.** Continue straight to Step 3.
 
 If a later code change needs redeploying, it's just `npx wrangler deploy --env production` again.
 
 ---
 
-## Step 3 — Put it on a custom domain (required for auth)
+## Step 3 — Set your login password (single-user auth)
 
-Cloudflare Access can only gate a **hostname in a zone you own** — it cannot protect a bare
-`*.workers.dev` URL. So you need a domain in this Cloudflare account.
+The app gates every page and every `/api` route behind **one password** — no domain, no Cloudflare
+Access, no third-party IdP needed. It reads two Worker secrets:
 
-- **Have a domain here already?** Dashboard → **Workers & Pages → `ash-overseas-prod` → Settings →
-  Domains & Routes → Add → Custom domain** → e.g. `ledger.yourdomain.com`. Cloudflare issues the TLS
-  cert automatically (takes a minute).
-- **No domain?** Cheapest path: **Dashboard → Domain Registration → Register Domain** (Cloudflare
-  Registrar sells at wholesale cost, ~$5–10/yr, no markup), or add a domain you already own
-  (Dashboard → Add a site → Free plan → change nameservers). Then do the "Add custom domain" step
-  above.
-- **Really don't want a domain?** Then don't deploy publicly — run it locally (`pnpm build && pnpm
-  preview`) on your own machine/home network only. You lose phone-on-the-go access, but it needs no
-  Access/domain. (Not recommended vs. a $8 domain.)
+- `AUTH_PASSWORD_HASH` — a PBKDF2 hash of your password (the plaintext is **never** stored anywhere).
+- `AUTH_SECRET` — a random key that signs the session cookie.
 
-From here, use `https://ledger.yourdomain.com` as the app URL.
+A helper generates both:
+
+```sh
+node scripts/hash-password.mjs        # prompts for a password (leave blank = generate a strong one)
+```
+
+It prints the two values and the exact commands. Set them as prod secrets, then redeploy:
+
+```sh
+npx wrangler secret put AUTH_PASSWORD_HASH --env production   # paste the hash it printed
+npx wrangler secret put AUTH_SECRET --env production          # paste the random key it printed
+npx wrangler deploy --env production
+```
+
+> **Both** secrets must be set. If either is missing the app runs with auth **disabled** (open) — that
+> is intentional for local dev, but on prod it means no login. Always verify below after deploying.
+
+### Verify
+
+- Open your app URL in a fresh/incognito window → you get the **password screen** → enter your
+  password → the app loads. A wrong password is rejected (with a deliberate ~½s delay).
+- Hit any `/api/...` URL directly without logging in → it returns **401**. There is no unauthenticated
+  read or write path.
+- The session lasts 30 days; the header has a **log-out** button.
+
+To change the password later, re-run the script and `wrangler secret put AUTH_PASSWORD_HASH` again
+(also rotating `AUTH_SECRET` invalidates any active session — a good idea if you suspect exposure).
+
+✅ **Now it's safe to enter real data.**
 
 ---
 
-## Step 4 — Authentication: Cloudflare Access (email one-time PIN)
+## Step 4 — Custom domain (optional — nicer URL)
 
-### 4a. Create your Zero Trust org (first time only)
+The `*.workers.dev` URL works fine and is already protected by your login, so a domain is **not
+required** — dropping the Cloudflare Access requirement is exactly why we no longer need one. If you'd
+like a memorable URL like `ledger.yourdomain.com`:
 
-Dashboard → **Zero Trust** (or `one.dash.cloudflare.com`). If prompted, pick a **team name** and the
-free plan. Your **team domain** is `TEAMNAME.cloudflareaccess.com` — write it down, it's the
-`CF_ACCESS_TEAM_DOMAIN` secret.
+- **Domain already in this account:** Dashboard → **Workers & Pages → `ash-overseas-prod` → Settings →
+  Domains & Routes → Add → Custom domain**. Cloudflare issues the TLS cert automatically.
+- **No domain:** **Dashboard → Domain Registration → Register Domain** (Cloudflare Registrar, wholesale
+  ~$5–10/yr), or add one you already own (Add a site → Free plan → change nameservers), then do the
+  step above.
 
-### 4b. Confirm email PIN login is on
-
-Zero Trust → **Settings → Authentication → Login methods** → **One-time PIN** should be present
-(on by default). No identity provider needed.
-
-### 4c. Create the Access application
-
-Zero Trust → **Access → Applications → Add an application → Self-hosted**:
-
-- **Name:** ASH Overseas
-- **Session duration:** 24 hours (daily re-login — sensible for a phone)
-- **Application domain:** `ledger.yourdomain.com` (from Step 3)
-- **Next → Add a policy:** name "Owner"; Action **Allow**; **Include → Emails →** your email
-  `suhaib.muhammed2002@gmail.com` (add the maintainer's email too, if they should log in)
-- Save / Add application.
-
-### 4d. Get the AUD tag and set the secrets
-
-- Open the app → **Overview → Application Audience (AUD) Tag** → copy the long hex string. That's
-  `CF_ACCESS_AUD`.
-- Set both as Worker secrets, then redeploy:
-  ```sh
-  npx wrangler secret put CF_ACCESS_TEAM_DOMAIN --env production   # paste TEAMNAME.cloudflareaccess.com
-  npx wrangler secret put CF_ACCESS_AUD --env production           # paste the AUD tag
-  npx wrangler deploy --env production
-  ```
-
-### 4e. Verify, then lock the back door
-
-- Visit `https://ledger.yourdomain.com` in a fresh/incognito browser → you get the **email-OTP**
-  screen → enter your email → paste the code → the app loads.
-- **Disable the naked preview URL:** Workers & Pages → `ash-overseas-prod` → Settings → Domains &
-  Routes → disable the `workers.dev` route so only the Access-protected domain serves the app.
-
-✅ **Now it's safe to enter real data.**
+Wherever the rest of this runbook says `ledger.yourdomain.com`, use your `workers.dev` URL instead if
+you skip this step.
 
 ---
 
@@ -165,12 +156,14 @@ artifact (90-day retention). It does nothing until you add the secrets:
 
 ## Step 7 — Hardening (on the live URL)
 
-1. **Security-headers scan:** paste `https://ledger.yourdomain.com` into `securityheaders.com` (or
-   Mozilla Observatory). You should see **CSP, HSTS, X-Content-Type-Options, X-Frame-Options** — they
-   come from `public/_headers`. Fix gaps by editing that file + redeploying.
-2. **Rate limiting (WAF):** Dashboard → your domain → **Security → WAF → Rate limiting rules → Create**
-   → e.g. path contains `/api/` → 100 requests / 1 min / per IP → Block. (Access already fronts the
-   app; this is a backstop.)
+1. **Security-headers scan:** paste your app URL (workers.dev or your domain) into `securityheaders.com`
+   (or Mozilla Observatory). You should see **CSP, HSTS, X-Content-Type-Options, X-Frame-Options** —
+   they come from `public/_headers`. Fix gaps by editing that file + redeploying.
+2. **Rate limiting (WAF, needs a custom domain):** if you did Step 4, Dashboard → your domain →
+   **Security → WAF → Rate limiting rules → Create** → e.g. path contains `/api/` → 100 requests /
+   1 min / per IP → Block. (Your login already gates the app; this is a backstop against brute-forcing
+   the password endpoint.) On a bare `workers.dev` URL zone-WAF isn't available — the login's ~½s
+   wrong-password delay is the backstop there.
 3. **Dependabot alerts:** GitHub → repo → **Settings → Code security** → ensure Dependabot alerts +
    security updates are **enabled** (`.github/dependabot.yml` already opens weekly PRs).
 
@@ -188,5 +181,6 @@ artifact (90-day retention). It does nothing until you add the secrets:
 
 ### One-line recap
 
-pre-flight → deploy → custom domain → Access + secrets + redeploy → verify a restore → GitHub
-secrets for backups → headers scan + WAF → invite maintainer. **No real data until Access is verified.**
+pre-flight → deploy → set login password (secrets + redeploy) → _(optional custom domain)_ → verify a
+restore → GitHub secrets for backups → headers scan + WAF → invite maintainer. **No real data until
+login is verified.**

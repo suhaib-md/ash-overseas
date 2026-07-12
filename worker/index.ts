@@ -1,11 +1,13 @@
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import type { ZodType } from 'zod';
 import { getDb } from './db/client';
 import {
   dealerCreateSchema,
   dealerUpdateSchema,
   listQuerySchema,
+  loginSchema,
   transactionCreateSchema,
   movementCreateSchema,
 } from '../shared/schemas';
@@ -15,14 +17,18 @@ import { getBalance, getDealerBalances, getLedger } from './repo/ledger';
 import { getTransactionDetail, getSuggestions } from './repo/transactions';
 import { getAuditLog } from './repo/audit';
 import { postTransaction, postMovement, voidSource } from './ledger/post';
-import { verifyAccessJwt } from './auth';
+import { verifyPassword, createSession, verifySession } from './auth';
 
 export interface Env {
   DB: D1Database;
-  // Set in production (wrangler secret) → enables Access JWT verification. Unset = local dev.
-  CF_ACCESS_TEAM_DOMAIN?: string;
-  CF_ACCESS_AUD?: string;
+  // Set in production (wrangler secret) → enables password login. Unset = local dev (open).
+  AUTH_PASSWORD_HASH?: string;
+  AUTH_SECRET?: string;
 }
+
+const SESSION_COOKIE = 'ash_session';
+const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
+const authEnabled = (env: Env) => Boolean(env.AUTH_PASSWORD_HASH && env.AUTH_SECRET);
 
 class HttpError extends Error {
   constructor(
@@ -71,19 +77,15 @@ app.use(
   }),
 );
 
-// Cloudflare Access JWT verification (Security Blueprint L1). Skipped when CF_ACCESS_* are
-// unset (local dev); in production a missing/invalid token → 403, closing the
-// "hit the *.workers.dev URL directly" bypass.
+// Single-user session gate (Security Blueprint L1). Skipped when AUTH_* are unset (local
+// dev, open). Auth endpoints are exempt so you can log in / check status. A missing or
+// invalid session → 401, so no financial data is served without login.
 app.use('/api/*', async (c, next) => {
-  const teamDomain = c.env.CF_ACCESS_TEAM_DOMAIN;
-  const aud = c.env.CF_ACCESS_AUD;
-  if (!teamDomain || !aud) return next();
-  const token = c.req.header('cf-access-jwt-assertion');
-  if (!token) return c.json({ error: 'unauthenticated' }, 403);
-  try {
-    await verifyAccessJwt(token, { teamDomain, aud });
-  } catch {
-    return c.json({ error: 'forbidden' }, 403);
+  if (!authEnabled(c.env)) return next();
+  if (c.req.path.startsWith('/api/auth/')) return next();
+  const token = getCookie(c, SESSION_COOKIE);
+  if (!token || !(await verifySession(token, c.env.AUTH_SECRET!))) {
+    return c.json({ error: 'unauthenticated' }, 401);
   }
   return next();
 });
@@ -108,6 +110,38 @@ app.onError((err, c) => {
 app.get('/api/health', (c) =>
   c.json({ ok: true, service: 'ash-overseas-ledger', time: new Date().toISOString() }),
 );
+
+// --- Auth (single-user password) -------------------------------------------
+
+app.get('/api/auth/me', async (c) => {
+  if (!authEnabled(c.env)) return c.json({ authenticated: true, required: false });
+  const token = getCookie(c, SESSION_COOKIE);
+  const authenticated = token ? await verifySession(token, c.env.AUTH_SECRET!) : false;
+  return c.json({ authenticated, required: true });
+});
+
+app.post('/api/auth/login', async (c) => {
+  if (!authEnabled(c.env)) return c.json({ authenticated: true, required: false });
+  const { password } = parse(loginSchema, await jsonBody(c));
+  if (!(await verifyPassword(password, c.env.AUTH_PASSWORD_HASH!))) {
+    await new Promise((r) => setTimeout(r, 500)); // slow down brute-force guessing
+    return c.json({ error: 'invalid_password' }, 401);
+  }
+  const token = await createSession(c.env.AUTH_SECRET!, SESSION_TTL_SECONDS);
+  setCookie(c, SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'Strict',
+    path: '/',
+    maxAge: SESSION_TTL_SECONDS,
+  });
+  return c.json({ authenticated: true });
+});
+
+app.post('/api/auth/logout', (c) => {
+  deleteCookie(c, SESSION_COOKIE, { path: '/' });
+  return c.json({ ok: true });
+});
 
 // --- Dealers ---------------------------------------------------------------
 

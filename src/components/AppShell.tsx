@@ -8,9 +8,16 @@ import {
   Users,
   Plus,
   ScrollText,
+  LogOut,
   type LucideIcon,
 } from 'lucide-react';
 import { DealerPicker } from '../features/DealerPicker';
+import { logout } from '../lib/api';
+
+async function doLogout() {
+  await logout();
+  location.reload(); // re-runs the auth check → login screen
+}
 
 interface NavItem {
   to: string;
@@ -100,6 +107,15 @@ export function ShellLayout() {
             >
               <ScrollText size={18} />
             </NavLink>
+            <button
+              type="button"
+              onClick={doLogout}
+              title="Log out"
+              aria-label="Log out"
+              className="rounded-lg p-2 text-on-surface-variant transition-colors hover:bg-surface-container"
+            >
+              <LogOut size={18} />
+            </button>
             <button
               type="button"
               onClick={() => setPickDealer(true)}
