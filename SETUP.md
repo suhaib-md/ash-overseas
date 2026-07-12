@@ -119,9 +119,15 @@ money-core check rendering **₹1,23,456.78**.
 ## 6. Deploy
 
 ```sh
-pnpm deploy                      # deploys the default (dev-bound) worker
-npx wrangler deploy --env production   # deploys the production worker + bindings
+pnpm deploy        # builds + deploys the default (dev-bound) worker — for preview only
+pnpm deploy:prod   # builds for prod + deploys the production worker + prod D1
 ```
+
+> Always deploy production with `pnpm deploy:prod`, **never** `wrangler deploy --env production`.
+> The Vite plugin selects dev-vs-prod at **build** time (via `CLOUDFLARE_ENV`), so passing
+> `--env production` to a dev build silently targets the **dev** database. `pnpm deploy:prod`
+> (`scripts/deploy-prod.mjs`) builds with `CLOUDFLARE_ENV=production` first. Full go-live sequence:
+> [GO-LIVE.md](GO-LIVE.md).
 
 ---
 
@@ -135,12 +141,13 @@ production walkthrough is in [`GO-LIVE.md`](GO-LIVE.md) → Step 3; in short:
 
 1. Generate both secrets: `node scripts/hash-password.mjs` (blank password = it generates a
    strong one and prints it once).
-2. Set them in production and redeploy:
+2. Set them in production (each `secret put` re-versions the Worker, so they apply immediately):
    ```sh
    npx wrangler secret put AUTH_PASSWORD_HASH --env production
    npx wrangler secret put AUTH_SECRET --env production
-   npx wrangler deploy --env production
    ```
+   To deploy code, use `pnpm deploy:prod` (never `wrangler deploy --env production` — the Vite
+   plugin picks the env at build time; see GO-LIVE.md Step 2).
 3. To test the login flow **locally**, put the same two lines in `.dev.vars` instead (see
    `.dev.vars.example`); remove them to go back to the open dev app.
 

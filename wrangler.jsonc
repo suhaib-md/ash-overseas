@@ -28,7 +28,9 @@
   // Backups are card-free: D1 Time Travel (30-day PITR) + `pnpm db:export` SQL dumps
   // (optionally automated by .github/workflows/backup.yml). See SETUP.md → Backups & restore.
 
-  // --- PRODUCTION env: `wrangler deploy --env production` ---
+  // --- PRODUCTION env: deploy with `pnpm deploy:prod` (builds with CLOUDFLARE_ENV=production,
+  //     which bakes this env into the bundle). Do NOT use `wrangler deploy --env production` — the
+  //     Vite plugin selects the env at build time, so the flag alone would ship the dev DB. ---
   "env": {
     "production": {
       "name": "ash-overseas-prod",

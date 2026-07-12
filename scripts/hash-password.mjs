@@ -35,8 +35,8 @@ if (generated) {
   console.log('Generated password (SAVE THIS in a password manager — it is not recoverable):');
   console.log('  ' + password + '\n');
 }
-console.log('Set them and redeploy:');
+console.log('Set them (each re-versions the Worker, so they take effect with no redeploy):');
 console.log('  npx wrangler secret put AUTH_PASSWORD_HASH --env production');
 console.log('  npx wrangler secret put AUTH_SECRET --env production');
-console.log('  npx wrangler deploy --env production\n');
+console.log('(To deploy code, use `pnpm deploy:prod` — not `wrangler deploy --env production`.)\n');
 console.log('(To test login locally, put the same two lines in .dev.vars instead.)');

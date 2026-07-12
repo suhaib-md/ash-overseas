@@ -34,18 +34,19 @@ pnpm dev                # http://localhost:5173
 
 ## Scripts
 
-| Script                                     | What                                           |
-| ------------------------------------------ | ---------------------------------------------- |
-| `pnpm dev`                                 | Local dev server (Worker + SPA on miniflare)   |
-| `pnpm build`                               | Production build (`dist/`)                     |
-| `pnpm deploy`                              | Build + `wrangler deploy`                      |
-| `pnpm test`                                | Pure unit tests (money + ledger engine)        |
-| `pnpm test:d1`                             | D1-backed integration tests (Miniflare)        |
-| `pnpm test:all`                            | Both suites                                    |
-| `pnpm typecheck`                           | `tsc` across app/worker/node projects          |
-| `pnpm lint` / `pnpm format`                | ESLint / Prettier                              |
-| `pnpm db:generate`                         | Author a Drizzle migration from schema changes |
-| `pnpm db:migrate:local` / `:dev` / `:prod` | Apply migrations                               |
+| Script                                     | What                                                  |
+| ------------------------------------------ | ----------------------------------------------------- |
+| `pnpm dev`                                 | Local dev server (Worker + SPA on miniflare)          |
+| `pnpm build`                               | Production build (`dist/`)                            |
+| `pnpm deploy`                              | Build + deploy the **dev**-bound Worker (preview)     |
+| `pnpm deploy:prod`                         | Build for prod + deploy `ash-overseas-prod` + prod D1 |
+| `pnpm test`                                | Pure unit tests (money + ledger engine)               |
+| `pnpm test:d1`                             | D1-backed integration tests (Miniflare)               |
+| `pnpm test:all`                            | Both suites                                           |
+| `pnpm typecheck`                           | `tsc` across app/worker/node projects                 |
+| `pnpm lint` / `pnpm format`                | ESLint / Prettier                                     |
+| `pnpm db:generate`                         | Author a Drizzle migration from schema changes        |
+| `pnpm db:migrate:local` / `:dev` / `:prod` | Apply migrations                                      |
 
 ## Architecture
 
@@ -85,8 +86,10 @@ typecheck + both suites + build + `pnpm audit` on every push/PR.
 
 ## Maintainer runbook
 
-- **Deploy prod:** `wrangler deploy --env production` (after `pnpm db:migrate:prod`). First-time
-  Cloudflare setup (D1) is in [SETUP.md](SETUP.md); the login-password secrets are in GO-LIVE.md Step 3.
+- **Deploy prod:** `pnpm deploy:prod` (after `pnpm db:migrate:prod`). Use this, **not**
+  `wrangler deploy --env production` — the Vite plugin selects the env at build time, so the flag
+  alone would ship against the dev DB (see `scripts/deploy-prod.mjs`). First-time Cloudflare setup
+  (D1) is in [SETUP.md](SETUP.md); the login-password secrets are in GO-LIVE.md Step 3.
 - **Run everything:** `pnpm test:all && pnpm typecheck && pnpm build`.
 - **Backups/restore:** D1 Time Travel + `pnpm db:export` SQL dumps (card-free, no R2) — commands
   and the verified restore procedure are in [SETUP.md → Backups & restore](SETUP.md).
@@ -100,5 +103,6 @@ typecheck + both suites + build + `pnpm audit` on every push/PR.
 - **Secrets** live only in `wrangler secret` / `.dev.vars` (gitignored) — never in the repo. Rotate
   on any suspicion.
 - **Incident basics:** suspected bad data → restore via Time Travel to just before it; suspected
-  key/password leak → re-run `node scripts/hash-password.mjs`, `wrangler secret put AUTH_PASSWORD_HASH`
-  + `AUTH_SECRET` (rotating `AUTH_SECRET` logs out every session), rotate the D1 API token, redeploy.
+  key/password leak → re-run `node scripts/hash-password.mjs`, then `wrangler secret put` both
+  `AUTH_PASSWORD_HASH` and `AUTH_SECRET` (rotating `AUTH_SECRET` logs out every session), rotate the
+  D1 API token, and redeploy.

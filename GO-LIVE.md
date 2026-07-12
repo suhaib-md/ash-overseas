@@ -27,14 +27,20 @@ pnpm install && pnpm test:all && pnpm build   # all green
 ## Step 2 — Deploy to Cloudflare (production)
 
 ```sh
-pnpm db:migrate:prod                    # creates the schema in the prod D1 (type "yes")
-npx wrangler deploy --env production     # uploads Worker + SPA
+pnpm db:migrate:prod     # apply migrations to the prod D1 (type "yes" when prompted)
+pnpm deploy:prod         # builds for the prod env, then uploads the Worker + SPA
 ```
+
+> ⚠️ **Use `pnpm deploy:prod`, not `wrangler deploy --env production`.** The Vite plugin chooses
+> dev-vs-prod at **build** time (via `CLOUDFLARE_ENV`) and bakes it into the bundle — a plain build
+> plus `--env production` would deploy your code against the **dev** database. `pnpm deploy:prod`
+> (see `scripts/deploy-prod.mjs`) builds with `CLOUDFLARE_ENV=production` first, so it always targets
+> `ash-overseas-prod` + the prod D1.
 
 Wrangler prints a URL: `https://ash-overseas-prod.<your-subdomain>.workers.dev`. Open it — the app
 loads (empty). **It is NOT protected yet — don't add real data.** Continue straight to Step 3.
 
-If a later code change needs redeploying, it's just `npx wrangler deploy --env production` again.
+Any later redeploy is just `pnpm deploy:prod` again.
 
 ---
 
@@ -52,16 +58,20 @@ A helper generates both:
 node scripts/hash-password.mjs        # prompts for a password (leave blank = generate a strong one)
 ```
 
-It prints the two values and the exact commands. Set them as prod secrets, then redeploy:
+It prints the two values and the exact commands. Set them as prod secrets:
 
 ```sh
 npx wrangler secret put AUTH_PASSWORD_HASH --env production   # paste the hash it printed
 npx wrangler secret put AUTH_SECRET --env production          # paste the random key it printed
-npx wrangler deploy --env production
 ```
 
+Each `secret put` re-versions the live Worker, so the secrets **take effect immediately — no
+redeploy needed.** (`wrangler secret` is native wrangler and reads the root config, so `--env
+production` correctly targets `ash-overseas-prod` here — unlike `wrangler deploy`, see Step 2.) Just
+reload the app.
+
 > **Both** secrets must be set. If either is missing the app runs with auth **disabled** (open) — that
-> is intentional for local dev, but on prod it means no login. Always verify below after deploying.
+> is intentional for local dev, but on prod it means no login. Always verify below.
 
 ### Verify
 
