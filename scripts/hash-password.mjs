@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 
-const ITERATIONS = 210_000; // must match worker/auth.ts
+const ITERATIONS = 100_000; // must match worker/auth.ts (Workers caps PBKDF2 at 100k)
 
 const rl = createInterface({ input: stdin, output: stdout });
 
@@ -55,16 +55,27 @@ if (answer === 'y' || answer === 'yes') {
       input: value,
       stdio: ['pipe', 'inherit', 'inherit'],
       shell: true,
+      // wrangler sometimes uploads the secret then fails to exit on Windows; the
+      // "✨ Success!" line above tells the truth. Cap the wait so we never hang.
+      timeout: 60000,
     });
-    if (r.status !== 0) {
-      console.error(`\n${name} failed (exit ${r.status}). Are you logged in? Try: npx wrangler login`);
-      process.exit(r.status ?? 1);
+    if (r.status === 0) return; // clean success
+    if (r.signal || r.error?.code === 'ETIMEDOUT') {
+      console.warn(`  (wrangler didn't exit cleanly — a known Windows quirk. If it printed`);
+      console.warn(
+        `   "✨ Success! Uploaded secret ${name}" above, it worked. Verify in the app.)`,
+      );
+      return;
     }
+    console.error(`\n${name} failed (exit ${r.status}). Logged in? Try: npx wrangler login`);
+    process.exit(r.status ?? 1);
   };
   put('AUTH_PASSWORD_HASH', AUTH_PASSWORD_HASH);
   put('AUTH_SECRET', AUTH_SECRET);
   console.log('\n✅ Both secrets set. They take effect immediately (no redeploy).');
-  console.log('   Verify: open the app in an incognito window → you should get the password screen.');
+  console.log(
+    '   Verify: open the app in an incognito window → you should get the password screen.',
+  );
 } else {
   console.log('\nSkipped. Set them yourself (each re-versions the Worker; no redeploy needed):');
   console.log('  npx wrangler secret put AUTH_PASSWORD_HASH --env production');

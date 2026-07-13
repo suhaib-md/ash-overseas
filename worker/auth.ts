@@ -5,7 +5,10 @@
  * All crypto is Web Crypto so it runs in both workerd and the Node test runner.
  */
 const enc = new TextEncoder();
-const PBKDF2_ITERATIONS = 210_000;
+// The Cloudflare Workers runtime HARD-CAPS PBKDF2 at 100k iterations and throws
+// NotSupportedError above it (miniflare/Node don't enforce this, so a higher value
+// passes tests + `wrangler dev` but fails in production). Do NOT raise this.
+const PBKDF2_ITERATIONS = 100_000;
 
 function bytesToBase64(bytes: Uint8Array): string {
   let s = '';
@@ -33,10 +36,19 @@ function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
 
 // --- password (PBKDF2-SHA256). Stored format: pbkdf2$<iterations>$<saltB64>$<hashB64> ---
 
-export async function hashPassword(password: string, iterations = PBKDF2_ITERATIONS): Promise<string> {
+export async function hashPassword(
+  password: string,
+  iterations = PBKDF2_ITERATIONS,
+): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256);
+  const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, [
+    'deriveBits',
+  ]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+    key,
+    256,
+  );
   return `pbkdf2$${iterations}$${bytesToBase64(salt)}$${bytesToBase64(new Uint8Array(bits))}`;
 }
 
@@ -48,8 +60,14 @@ export async function verifyPassword(password: string, stored: string): Promise<
     if (!Number.isInteger(iterations) || iterations < 1) return false;
     const salt = base64ToBytes(parts[2]!);
     const expected = base64ToBytes(parts[3]!);
-    const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, expected.length * 8);
+    const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, [
+      'deriveBits',
+    ]);
+    const bits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+      key,
+      expected.length * 8,
+    );
     return timingSafeEqual(new Uint8Array(bits), expected);
   } catch {
     // A malformed/corrupted AUTH_PASSWORD_HASH (e.g. truncated when pasted into
@@ -62,12 +80,22 @@ export async function verifyPassword(password: string, stored: string): Promise<
 // --- session: HMAC-signed `{ exp }` token ---
 
 async function hmacKey(secret: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
 }
 
 export async function createSession(secret: string, ttlSeconds: number): Promise<string> {
-  const payload = bytesToBase64Url(enc.encode(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + ttlSeconds })));
-  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', await hmacKey(secret), enc.encode(payload)));
+  const payload = bytesToBase64Url(
+    enc.encode(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + ttlSeconds })),
+  );
+  const sig = new Uint8Array(
+    await crypto.subtle.sign('HMAC', await hmacKey(secret), enc.encode(payload)),
+  );
   return `${payload}.${bytesToBase64Url(sig)}`;
 }
 
@@ -76,10 +104,14 @@ export async function verifySession(token: string, secret: string): Promise<bool
   if (dot < 0) return false;
   const payload = token.slice(0, dot);
   const sig = base64UrlToBytes(token.slice(dot + 1));
-  const expected = new Uint8Array(await crypto.subtle.sign('HMAC', await hmacKey(secret), enc.encode(payload)));
+  const expected = new Uint8Array(
+    await crypto.subtle.sign('HMAC', await hmacKey(secret), enc.encode(payload)),
+  );
   if (!timingSafeEqual(sig, expected)) return false;
   try {
-    const { exp } = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payload))) as { exp: number };
+    const { exp } = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payload))) as {
+      exp: number;
+    };
     return typeof exp === 'number' && exp > Math.floor(Date.now() / 1000);
   } catch {
     return false;
