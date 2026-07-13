@@ -41,15 +41,22 @@ export async function hashPassword(password: string, iterations = PBKDF2_ITERATI
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const parts = stored.split('$');
-  if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
-  const iterations = Number(parts[1]);
-  if (!Number.isInteger(iterations) || iterations < 1) return false;
-  const salt = base64ToBytes(parts[2]!);
-  const expected = base64ToBytes(parts[3]!);
-  const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, expected.length * 8);
-  return timingSafeEqual(new Uint8Array(bits), expected);
+  try {
+    const parts = stored.split('$');
+    if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
+    const iterations = Number(parts[1]);
+    if (!Number.isInteger(iterations) || iterations < 1) return false;
+    const salt = base64ToBytes(parts[2]!);
+    const expected = base64ToBytes(parts[3]!);
+    const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, expected.length * 8);
+    return timingSafeEqual(new Uint8Array(bits), expected);
+  } catch {
+    // A malformed/corrupted AUTH_PASSWORD_HASH (e.g. truncated when pasted into
+    // `wrangler secret put`) would otherwise throw and surface as a 500. Treat it
+    // as "no match" → a clean 401, so a bad secret can't crash the login route.
+    return false;
+  }
 }
 
 // --- session: HMAC-signed `{ exp }` token ---

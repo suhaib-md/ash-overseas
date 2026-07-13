@@ -316,6 +316,24 @@ describe('dealer + transaction + ledger API', () => {
     expect((await call('/api/dealers', { headers: { cookie } })).status).toBe(200);
   });
 
+  it('a corrupted AUTH_PASSWORD_HASH yields 401, never 500', async () => {
+    // Simulates a secret truncated/mangled when pasted into `wrangler secret put`.
+    const authEnv = {
+      DB: h.d1,
+      AUTH_PASSWORD_HASH: 'pbkdf2$210000$WmrI1kvJUY1AZIALwqmTSg==$not-valid-base64@@@',
+      AUTH_SECRET: 'test-hmac-secret',
+    };
+    const res = await app.fetch(
+      new Request('https://test.local/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' },
+        body: JSON.stringify({ password: 'anything' }),
+      }),
+      authEnv,
+    );
+    expect(res.status).toBe(401);
+  });
+
   it('audit log records creates and voids', async () => {
     const created = await post('/api/dealers', { name: 'Aud', type: 'both' });
     const { dealer } = (await created.json()) as { dealer: { id: number } };
