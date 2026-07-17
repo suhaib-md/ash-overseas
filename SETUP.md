@@ -131,25 +131,26 @@ pnpm deploy:prod   # builds for prod + deploys the production worker + prod D1
 
 ---
 
-## 7. Authentication — single-user password (Phase 3)
+## 7. Authentication — username + password (Phase 3)
 
-The app gates every page and `/api` route behind one password — no domain, no Cloudflare
-Access, no IdP. It reads two Worker secrets: `AUTH_PASSWORD_HASH` (a PBKDF2 hash — the
-plaintext is never stored) and `AUTH_SECRET` (signs the session cookie). If either is
-unset, auth is **disabled** (open) — which is what you want for local dev. The full
-production walkthrough is in [`GO-LIVE.md`](GO-LIVE.md) → Step 3; in short:
+The app gates every page and `/api` route behind a **username + password** — no domain, no
+Cloudflare Access, no IdP. The **username + password hash** live in the D1 `app_credentials`
+table (so they can be changed from inside the app); the only Worker secret is `AUTH_SECRET`,
+which signs the session cookie and turns the gate **on** (unset ⇒ auth disabled/open, which is
+what you want for local dev). Full production walkthrough: [`GO-LIVE.md`](GO-LIVE.md) → Step 3.
+In short:
 
-1. Generate both secrets: `node scripts/hash-password.mjs` (blank password = it generates a
-   strong one and prints it once).
-2. Set them in production (each `secret put` re-versions the Worker, so they apply immediately):
-   ```sh
-   npx wrangler secret put AUTH_PASSWORD_HASH --env production
-   npx wrangler secret put AUTH_SECRET --env production
-   ```
-   To deploy code, use `pnpm deploy:prod` (never `wrangler deploy --env production` — the Vite
-   plugin picks the env at build time; see GO-LIVE.md Step 2).
-3. To test the login flow **locally**, put the same two lines in `.dev.vars` instead (see
-   `.dev.vars.example`); remove them to go back to the open dev app.
+1. Ensure the table exists: `pnpm db:migrate:prod`.
+2. `node scripts/setup-login.mjs` — prompts for username + password, writes them to the prod D1,
+   and offers to set `AUTH_SECRET` (say yes the first time).
+3. Deploy with `pnpm deploy:prod` (never `wrangler deploy --env production` — the Vite plugin
+   picks the env at build time; see GO-LIVE.md Step 2).
+4. Change credentials anytime **in the app** (header → account icon → _Account_) or by re-running
+   the script.
+
+To test the login flow **locally**: `node scripts/setup-login.mjs --local` (seeds the local D1),
+then put `AUTH_SECRET="anything"` in `.dev.vars` to enable the gate. Remove it to go back to the
+open dev app.
 
 ---
 

@@ -128,6 +128,21 @@ export const ledgerEntries = sqliteTable(
   (t) => [index('idx_ledger_dealer_account_date').on(t.dealerId, t.account, t.entryDate, t.id)],
 );
 
+/**
+ * Single-user login credentials (one row, id = 1). Stored in D1 — not env secrets —
+ * so the owner can change username/password from inside the app (the Worker can't
+ * rewrite its own secrets). The password is kept only as a PBKDF2 hash; the session
+ * signing key stays the `AUTH_SECRET` env secret. See worker/auth.ts.
+ */
+export const appCredentials = sqliteTable('app_credentials', {
+  id: integer('id').primaryKey(), // always 1
+  username: text('username').notNull(),
+  passwordHash: text('password_hash').notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
 export const auditLog = sqliteTable('audit_log', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   action: text('action').notNull(), // create | void | edit | login

@@ -8,16 +8,10 @@ import {
   Users,
   Plus,
   ScrollText,
-  LogOut,
+  UserCircle2,
   type LucideIcon,
 } from 'lucide-react';
 import { DealerPicker } from '../features/DealerPicker';
-import { logout } from '../lib/api';
-
-async function doLogout() {
-  await logout();
-  location.reload(); // re-runs the auth check → login screen
-}
 
 interface NavItem {
   to: string;
@@ -39,6 +33,7 @@ function titleFor(pathname: string): string {
   if (pathname.startsWith('/sale')) return 'Sale';
   if (pathname.startsWith('/dealers/')) return 'Dealer';
   if (pathname.startsWith('/dealers')) return 'Dealers';
+  if (pathname.startsWith('/account')) return 'Account';
   return '';
 }
 
@@ -47,7 +42,7 @@ function titleFor(pathname: string): string {
  *  - Desktop (lg+): persistent left sidebar + wide content — a native web app.
  *  - Mobile: top bar + thumb-reachable bottom tab bar — a native mobile app.
  */
-export function ShellLayout() {
+export function ShellLayout({ username }: { username: string }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [pickDealer, setPickDealer] = useState(false);
@@ -107,15 +102,25 @@ export function ShellLayout() {
             >
               <ScrollText size={18} />
             </NavLink>
-            <button
-              type="button"
-              onClick={doLogout}
-              title="Log out"
-              aria-label="Log out"
-              className="rounded-lg p-2 text-on-surface-variant transition-colors hover:bg-surface-container"
+            <NavLink
+              to="/account"
+              title="Account"
+              aria-label="Account"
+              className={({ isActive }) =>
+                `flex items-center gap-2 rounded-lg p-2 transition-colors ${
+                  isActive
+                    ? 'bg-surface-container text-primary'
+                    : 'text-on-surface-variant hover:bg-surface-container'
+                }`
+              }
             >
-              <LogOut size={18} />
-            </button>
+              <UserCircle2 size={18} />
+              {username && (
+                <span className="hidden max-w-32 truncate text-body-md font-medium sm:inline">
+                  {username}
+                </span>
+              )}
+            </NavLink>
             <button
               type="button"
               onClick={() => setPickDealer(true)}

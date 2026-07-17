@@ -160,20 +160,59 @@ export const getAudit = () => api<{ entries: AuditEntry[] }>(`/audit`);
 
 // --- Auth ------------------------------------------------------------------
 
-export const authMe = () => api<{ authenticated: boolean; required: boolean }>(`/auth/me`);
+export const authMe = () =>
+  api<{ authenticated: boolean; required: boolean; username?: string }>(`/auth/me`);
 
-export async function login(password: string): Promise<void> {
-  // Raw fetch (not api()) so a wrong-password 401 doesn't trip the global handler.
+export async function login(username: string, password: string): Promise<void> {
+  // Raw fetch (not api()) so a wrong-credentials 401 doesn't trip the global handler.
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ username, password }),
   });
-  if (res.status === 401) throw new Error('Incorrect password');
+  if (res.status === 401) throw new Error('Incorrect username or password');
   if (!res.ok) throw new Error('Login failed');
 }
 
 export const logout = () => fetch('/api/auth/logout', { method: 'POST' });
+
+/** Change the password (requires the current one). Throws on a wrong current password. */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const res = await fetch('/api/auth/change-password', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  if (res.status === 401) throw new Error('Current password is incorrect');
+  if (!res.ok) {
+    const msg = await res
+      .json()
+      .then((b: { issues?: { message: string }[] }) => b.issues?.map((i) => i.message).join(', '))
+      .catch(() => null);
+    throw new Error(msg || 'Could not change password');
+  }
+}
+
+/** Change the username (requires the current password). Returns the new username. */
+export async function changeUsername(
+  currentPassword: string,
+  newUsername: string,
+): Promise<string> {
+  const res = await fetch('/api/auth/change-username', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ currentPassword, newUsername }),
+  });
+  if (res.status === 401) throw new Error('Current password is incorrect');
+  if (!res.ok) {
+    const msg = await res
+      .json()
+      .then((b: { issues?: { message: string }[] }) => b.issues?.map((i) => i.message).join(', '))
+      .catch(() => null);
+    throw new Error(msg || 'Could not change username');
+  }
+  return ((await res.json()) as { username: string }).username;
+}
 
 export const voidSource = (kind: 'transaction' | 'movement', id: number) =>
   api<{ voided: { reversalCount: number } }>(

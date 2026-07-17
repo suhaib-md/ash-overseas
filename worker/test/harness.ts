@@ -10,6 +10,7 @@ import {
   transactions,
   moneyMovements,
   auditLog,
+  appCredentials,
 } from '../db/schema';
 
 const migrationsFolder = path.join(
@@ -47,6 +48,7 @@ export async function createHarness(): Promise<TestHarness> {
         db.delete(moneyMovements),
         db.delete(auditLog),
         db.delete(dealers),
+        db.delete(appCredentials),
       ]);
       try {
         await d1.exec('DELETE FROM sqlite_sequence;');

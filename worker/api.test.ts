@@ -5,6 +5,7 @@
 import { beforeAll, afterAll, beforeEach, describe, it, expect } from 'vitest';
 import app from './index';
 import { hashPassword } from './auth';
+import { setCredentials } from './repo/credentials';
 import { createHarness, type TestHarness } from './test/harness';
 
 let h: TestHarness;
@@ -283,54 +284,139 @@ describe('dealer + transaction + ledger API', () => {
     expect(res.headers.get('x-frame-options')).toBe('DENY');
   });
 
-  it('single-user auth: gates /api, rejects wrong password, accepts a session cookie', async () => {
-    const hash = await hashPassword('correct horse battery');
-    const authEnv = { DB: h.d1, AUTH_PASSWORD_HASH: hash, AUTH_SECRET: 'test-hmac-secret' };
-    const call = (path: string, init?: RequestInit) =>
-      app.fetch(new Request(`https://test.local${path}`, init), authEnv);
-    const headers = { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' };
+  const authEnv = () => ({ DB: h.d1, AUTH_SECRET: 'test-hmac-secret' });
+  const jsonHeaders = { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' };
+  const authCall = (path: string, init?: RequestInit) =>
+    app.fetch(new Request(`https://test.local${path}`, init), authEnv());
+  const authPost = (path: string, body: unknown, extra: Record<string, string> = {}) =>
+    authCall(path, {
+      method: 'POST',
+      headers: { ...jsonHeaders, ...extra },
+      body: JSON.stringify(body),
+    });
+
+  it('username+password auth: gates /api, rejects bad creds, accepts a session cookie', async () => {
+    await setCredentials(h.db, {
+      username: 'owner',
+      passwordHash: await hashPassword('correct horse battery'),
+    });
 
     // No session → 401 on data
-    expect((await call('/api/dealers')).status).toBe(401);
+    expect((await authCall('/api/dealers')).status).toBe(401);
 
-    // Wrong password → 401
-    const bad = await call('/api/auth/login', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ password: 'nope' }),
-    });
-    expect(bad.status).toBe(401);
+    // Wrong password → 401; wrong username → 401
+    expect(
+      (await authPost('/api/auth/login', { username: 'owner', password: 'nope' })).status,
+    ).toBe(401);
+    expect(
+      (
+        await authPost('/api/auth/login', {
+          username: 'someone',
+          password: 'correct horse battery',
+        })
+      ).status,
+    ).toBe(401);
 
-    // Right password → 200 + Set-Cookie
-    const ok = await call('/api/auth/login', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ password: 'correct horse battery' }),
+    // Right creds (username case-insensitive) → 200 + Set-Cookie
+    const ok = await authPost('/api/auth/login', {
+      username: 'OWNER',
+      password: 'correct horse battery',
     });
     expect(ok.status).toBe(200);
     const setCookie = ok.headers.get('set-cookie') ?? '';
     expect(setCookie).toContain('ash_session=');
-
-    // Reusing the session cookie → data allowed
     const cookie = setCookie.split(';')[0]!;
-    expect((await call('/api/dealers', { headers: { cookie } })).status).toBe(200);
+
+    // Session cookie → data allowed; /api/auth/me reports the username
+    expect((await authCall('/api/dealers', { headers: { cookie } })).status).toBe(200);
+    const me = (await (await authCall('/api/auth/me', { headers: { cookie } })).json()) as {
+      authenticated: boolean;
+      username?: string;
+    };
+    expect(me).toMatchObject({ authenticated: true, username: 'owner' });
   });
 
-  it('a corrupted AUTH_PASSWORD_HASH yields 401, never 500', async () => {
-    // Simulates a secret truncated/mangled when pasted into `wrangler secret put`.
-    const authEnv = {
-      DB: h.d1,
-      AUTH_PASSWORD_HASH: 'pbkdf2$210000$WmrI1kvJUY1AZIALwqmTSg==$not-valid-base64@@@',
-      AUTH_SECRET: 'test-hmac-secret',
-    };
-    const res = await app.fetch(
-      new Request('https://test.local/api/auth/login', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'sec-fetch-site': 'same-origin' },
-        body: JSON.stringify({ password: 'anything' }),
-      }),
-      authEnv,
-    );
+  it('change-password requires a session + the current password, then the new one works', async () => {
+    await setCredentials(h.db, {
+      username: 'owner',
+      passwordHash: await hashPassword('old-pass-123'),
+    });
+    const login = await authPost('/api/auth/login', {
+      username: 'owner',
+      password: 'old-pass-123',
+    });
+    const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0]!;
+
+    // No session → 401 (change-* is NOT exempt from the gate)
+    expect(
+      (
+        await authPost('/api/auth/change-password', {
+          currentPassword: 'old-pass-123',
+          newPassword: 'new-pass-456',
+        })
+      ).status,
+    ).toBe(401);
+
+    // Wrong current password → 401
+    expect(
+      (
+        await authPost(
+          '/api/auth/change-password',
+          { currentPassword: 'WRONG', newPassword: 'new-pass-456' },
+          { cookie },
+        )
+      ).status,
+    ).toBe(401);
+
+    // Correct → 200, and the new password logs in while the old one no longer does
+    expect(
+      (
+        await authPost(
+          '/api/auth/change-password',
+          { currentPassword: 'old-pass-123', newPassword: 'new-pass-456' },
+          { cookie },
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (await authPost('/api/auth/login', { username: 'owner', password: 'new-pass-456' })).status,
+    ).toBe(200);
+    expect(
+      (await authPost('/api/auth/login', { username: 'owner', password: 'old-pass-123' })).status,
+    ).toBe(401);
+  });
+
+  it('change-username updates the login identity', async () => {
+    await setCredentials(h.db, {
+      username: 'owner',
+      passwordHash: await hashPassword('pw-123456'),
+    });
+    const login = await authPost('/api/auth/login', { username: 'owner', password: 'pw-123456' });
+    const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0]!;
+
+    expect(
+      (
+        await authPost(
+          '/api/auth/change-username',
+          { currentPassword: 'pw-123456', newUsername: 'ash_admin' },
+          { cookie },
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (await authPost('/api/auth/login', { username: 'ash_admin', password: 'pw-123456' })).status,
+    ).toBe(200);
+    expect(
+      (await authPost('/api/auth/login', { username: 'owner', password: 'pw-123456' })).status,
+    ).toBe(401);
+  });
+
+  it('a corrupted stored password hash yields 401, never 500', async () => {
+    await setCredentials(h.db, {
+      username: 'owner',
+      passwordHash: 'pbkdf2$100000$WmrI1kvJUY1AZIALwqmTSg==$not-valid-base64@@@',
+    });
+    const res = await authPost('/api/auth/login', { username: 'owner', password: 'anything' });
     expect(res.status).toBe(401);
   });
 

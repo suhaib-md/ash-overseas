@@ -8,6 +8,13 @@
       "when": 1783409572369,
       "tag": "0000_parched_the_watchers",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784251684529,
+      "tag": "0001_cloudy_zaran",
+      "breakpoints": true
     }
   ]
 }

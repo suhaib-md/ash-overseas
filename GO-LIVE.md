@@ -44,45 +44,41 @@ Any later redeploy is just `pnpm deploy:prod` again.
 
 ---
 
-## Step 3 — Set your login password (single-user auth)
+## Step 3 — Set up your login (username + password)
 
-The app gates every page and every `/api` route behind **one password** — no domain, no Cloudflare
-Access, no third-party IdP needed. It reads two Worker secrets:
+The app gates every page and every `/api` route behind a **username + password** — no domain, no
+Cloudflare Access, no third-party IdP. How it's stored:
 
-- `AUTH_PASSWORD_HASH` — a PBKDF2 hash of your password (the plaintext is **never** stored anywhere).
-- `AUTH_SECRET` — a random key that signs the session cookie.
+- The **username + password hash** live in the D1 `app_credentials` table (so you can change them
+  from inside the app later — see below). The password is only ever a PBKDF2 hash.
+- `AUTH_SECRET` (a random key that signs the session cookie) is the one **Worker secret**.
 
-A helper generates both:
-
-```sh
-node scripts/hash-password.mjs        # prompts for a password (leave blank = generate a strong one)
-```
-
-It prints the two values and the exact commands. Set them as prod secrets:
+First make sure the credentials table exists (Step 2's `pnpm db:migrate:prod` already applied it —
+run it again if unsure; it's idempotent). Then one script does the rest:
 
 ```sh
-npx wrangler secret put AUTH_PASSWORD_HASH --env production   # paste the hash it printed
-npx wrangler secret put AUTH_SECRET --env production          # paste the random key it printed
+node scripts/setup-login.mjs        # prompts for username + password; blank password = generate one
 ```
 
-Each `secret put` re-versions the live Worker, so the secrets **take effect immediately — no
-redeploy needed.** (`wrangler secret` is native wrangler and reads the root config, so `--env
-production` correctly targets `ash-overseas-prod` here — unlike `wrangler deploy`, see Step 2.) Just
-reload the app.
+It writes the username + hash into the **production** D1 and offers to set `AUTH_SECRET`
+(answer **y** the first time). It uses `wrangler` under the hood; if `wrangler secret put` prints
+`✨ Success!` and then seems to hang, that's a known Windows quirk — it already worked; press Ctrl-C.
 
-> **Both** secrets must be set. If either is missing the app runs with auth **disabled** (open) — that
-> is intentional for local dev, but on prod it means no login. Always verify below.
+> `AUTH_SECRET` is what turns the gate **on**. If it's unset the app runs **open** (intended for local
+> dev only). On prod, always set it and verify below.
 
 ### Verify
 
-- Open your app URL in a fresh/incognito window → you get the **password screen** → enter your
-  password → the app loads. A wrong password is rejected (with a deliberate ~½s delay).
-- Hit any `/api/...` URL directly without logging in → it returns **401**. There is no unauthenticated
-  read or write path.
-- The session lasts 30 days; the header has a **log-out** button.
+- Open your app URL in a fresh/incognito window → you get the **login page** → sign in with your
+  username + password → the app loads. Wrong credentials are rejected (with a deliberate ~½s delay).
+- Hit any `/api/...` URL directly without logging in → **401**. There is no unauthenticated path.
+- The session lasts 30 days.
 
-To change the password later, re-run the script and `wrangler secret put AUTH_PASSWORD_HASH` again
-(also rotating `AUTH_SECRET` invalidates any active session — a good idea if you suspect exposure).
+### Changing username/password later
+
+Two ways: **in the app** (header → the **account** icon → _Account_ → change username or password,
+each needs your current password), or re-run `node scripts/setup-login.mjs`. Rotating `AUTH_SECRET`
+(the script offers it) logs out any active session — do that if you suspect the cookie key leaked.
 
 ✅ **Now it's safe to enter real data.**
 

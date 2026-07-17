@@ -9,7 +9,7 @@
 # CLOUDFLARE_DATABASE_ID=""
 # CLOUDFLARE_D1_TOKEN=""
 #
-# --- Single-user login (Phase 3). Leave unset for open local dev; set both to test login. ---
-# Generate with: node scripts/hash-password.mjs
-# AUTH_PASSWORD_HASH="pbkdf2$210000$...salt...$...hash..."
-# AUTH_SECRET="...random base64..."
+# --- Single-user login (Phase 3). Leave unset for open local dev. ---
+# Set AUTH_SECRET to ANY non-empty value to turn the login gate ON locally; the
+# username + password live in D1 (seed them with: node scripts/setup-login.mjs --local).
+# AUTH_SECRET="any-non-empty-string-locally"

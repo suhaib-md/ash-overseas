@@ -5,15 +5,20 @@ import { Home } from './features/Home';
 import { DealerList } from './features/DealerList';
 import { DealerDetail } from './features/DealerDetail';
 import { AuditLog } from './features/AuditLog';
+import { Account } from './features/Account';
 import { Login } from './features/Login';
 import { authMe, setUnauthorizedHandler } from './lib/api';
 
 export function App() {
   const [status, setStatus] = useState<'loading' | 'authed' | 'login'>('loading');
+  const [username, setUsername] = useState('');
 
   const check = useCallback(() => {
     authMe()
-      .then((r) => setStatus(r.authenticated ? 'authed' : 'login'))
+      .then((r) => {
+        setUsername(r.username ?? '');
+        setStatus(r.authenticated ? 'authed' : 'login');
+      })
       .catch(() => setStatus('login'));
   }, []);
 
@@ -33,13 +38,17 @@ export function App() {
 
   return (
     <Routes>
-      <Route element={<ShellLayout />}>
+      <Route element={<ShellLayout username={username} />}>
         <Route path="/" element={<Home />} />
         <Route path="/purchase" element={<DealerListPage activity="purchase" />} />
         <Route path="/sale" element={<DealerListPage activity="sale" />} />
         <Route path="/dealers" element={<DealerListPage activity="all" />} />
         <Route path="/dealers/:id" element={<DealerDetailPage />} />
         <Route path="/audit" element={<AuditLog />} />
+        <Route
+          path="/account"
+          element={<Account username={username} onUsernameChanged={setUsername} />}
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

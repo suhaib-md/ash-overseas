@@ -9,27 +9,35 @@ import {
   dealerUpdateSchema,
   listQuerySchema,
   loginSchema,
+  changePasswordSchema,
+  changeUsernameSchema,
   transactionCreateSchema,
   movementCreateSchema,
 } from '../shared/schemas';
 import { describeBalance, type Account } from '../shared/ledger';
+import { auditLog } from './db/schema';
 import { createDealer, getDealer, updateDealer, archiveDealer, listDealers } from './repo/dealers';
 import { getBalance, getDealerBalances, getLedger } from './repo/ledger';
 import { getTransactionDetail, getSuggestions } from './repo/transactions';
 import { getAuditLog } from './repo/audit';
+import { getCredentials, updateUsername, updatePasswordHash } from './repo/credentials';
 import { postTransaction, postMovement, voidSource } from './ledger/post';
-import { verifyPassword, createSession, verifySession } from './auth';
+import { hashPassword, verifyPassword, createSession, verifySession } from './auth';
 
 export interface Env {
   DB: D1Database;
-  // Set in production (wrangler secret) → enables password login. Unset = local dev (open).
-  AUTH_PASSWORD_HASH?: string;
+  // Set in production (wrangler secret) → enables login + signs session cookies.
+  // Unset = local dev (open, no login). The username/password live in D1 (app_credentials).
   AUTH_SECRET?: string;
 }
 
 const SESSION_COOKIE = 'ash_session';
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
-const authEnabled = (env: Env) => Boolean(env.AUTH_PASSWORD_HASH && env.AUTH_SECRET);
+const authRequired = (env: Env) => Boolean(env.AUTH_SECRET);
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// Auth endpoints reachable WITHOUT a session. Everything else under /api/ (including
+// /api/auth/change-*) requires a valid session cookie.
+const PUBLIC_AUTH_PATHS = new Set(['/api/auth/login', '/api/auth/me', '/api/auth/logout']);
 
 class HttpError extends Error {
   constructor(
@@ -82,8 +90,8 @@ app.use(
 // dev, open). Auth endpoints are exempt so you can log in / check status. A missing or
 // invalid session → 401, so no financial data is served without login.
 app.use('/api/*', async (c, next) => {
-  if (!authEnabled(c.env)) return next();
-  if (c.req.path.startsWith('/api/auth/')) return next();
+  if (!authRequired(c.env)) return next();
+  if (PUBLIC_AUTH_PATHS.has(c.req.path)) return next();
   const token = getCookie(c, SESSION_COOKIE);
   if (!token || !(await verifySession(token, c.env.AUTH_SECRET!))) {
     return c.json({ error: 'unauthenticated' }, 401);
@@ -115,18 +123,24 @@ app.get('/api/health', (c) =>
 // --- Auth (single-user password) -------------------------------------------
 
 app.get('/api/auth/me', async (c) => {
-  if (!authEnabled(c.env)) return c.json({ authenticated: true, required: false });
+  if (!authRequired(c.env)) return c.json({ authenticated: true, required: false });
   const token = getCookie(c, SESSION_COOKIE);
   const authenticated = token ? await verifySession(token, c.env.AUTH_SECRET!) : false;
-  return c.json({ authenticated, required: true });
+  const username = authenticated ? (await getCredentials(getDb(c.env.DB)))?.username : undefined;
+  return c.json({ authenticated, required: true, username });
 });
 
 app.post('/api/auth/login', async (c) => {
-  if (!authEnabled(c.env)) return c.json({ authenticated: true, required: false });
-  const { password } = parse(loginSchema, await jsonBody(c));
-  if (!(await verifyPassword(password, c.env.AUTH_PASSWORD_HASH!))) {
-    await new Promise((r) => setTimeout(r, 500)); // slow down brute-force guessing
-    return c.json({ error: 'invalid_password' }, 401);
+  if (!authRequired(c.env)) return c.json({ authenticated: true, required: false });
+  const { username, password } = parse(loginSchema, await jsonBody(c));
+  const cred = await getCredentials(getDb(c.env.DB));
+  const ok =
+    cred != null &&
+    cred.username.toLowerCase() === username.trim().toLowerCase() &&
+    (await verifyPassword(password, cred.passwordHash));
+  if (!ok) {
+    await delay(500); // slow down brute-force guessing
+    return c.json({ error: 'invalid_credentials' }, 401);
   }
   const token = await createSession(c.env.AUTH_SECRET!, SESSION_TTL_SECONDS);
   setCookie(c, SESSION_COOKIE, token, {
@@ -136,12 +150,47 @@ app.post('/api/auth/login', async (c) => {
     path: '/',
     maxAge: SESSION_TTL_SECONDS,
   });
-  return c.json({ authenticated: true });
+  return c.json({ authenticated: true, username: cred.username });
 });
 
 app.post('/api/auth/logout', (c) => {
   deleteCookie(c, SESSION_COOKIE, { path: '/' });
   return c.json({ ok: true });
+});
+
+// Change credentials (session required — enforced by the gate above — AND re-entry of
+// the current password). Never stores the password, only its PBKDF2 hash.
+app.post('/api/auth/change-password', async (c) => {
+  const { currentPassword, newPassword } = parse(changePasswordSchema, await jsonBody(c));
+  const db = getDb(c.env.DB);
+  const cred = await getCredentials(db);
+  if (!cred || !(await verifyPassword(currentPassword, cred.passwordHash))) {
+    await delay(500);
+    return c.json({ error: 'invalid_current_password' }, 401);
+  }
+  await updatePasswordHash(db, await hashPassword(newPassword));
+  await db.insert(auditLog).values({ action: 'change-password', entity: 'auth', entityId: 1 });
+  return c.json({ ok: true });
+});
+
+app.post('/api/auth/change-username', async (c) => {
+  const { currentPassword, newUsername } = parse(changeUsernameSchema, await jsonBody(c));
+  const db = getDb(c.env.DB);
+  const cred = await getCredentials(db);
+  if (!cred || !(await verifyPassword(currentPassword, cred.passwordHash))) {
+    await delay(500);
+    return c.json({ error: 'invalid_current_password' }, 401);
+  }
+  const next = newUsername.trim();
+  await updateUsername(db, next);
+  await db.insert(auditLog).values({
+    action: 'change-username',
+    entity: 'auth',
+    entityId: 1,
+    beforeJson: JSON.stringify({ username: cred.username }),
+    afterJson: JSON.stringify({ username: next }),
+  });
+  return c.json({ ok: true, username: next });
 });
 
 // --- Dealers ---------------------------------------------------------------

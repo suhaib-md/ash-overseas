@@ -19,7 +19,8 @@ Authoritative spec: [`SRS.md`](SRS.md). Engineering/security/UX rules and the ph
 
 Vite + React 19 SPA and a **Hono** API on one **Cloudflare Worker** (via `@cloudflare/vite-plugin`),
 **D1** (SQLite) with **Drizzle**, **Zod** validation, **Tailwind v4**, **react-router**. Auth is a
-**single-user password** (PBKDF2 hash + HMAC-signed session cookie). All money is **integer paise**.
+**single-user username + password** (PBKDF2 hash in D1 + HMAC-signed session cookie), changeable
+in-app. All money is **integer paise**.
 
 ## Quick start
 
@@ -74,13 +75,14 @@ typecheck + both suites + build + `pnpm audit` on every push/PR.
 
 ## Security
 
-- **Single-user password** gates every page and `/api` route: PBKDF2-hashed password
-  (`AUTH_PASSWORD_HASH`) + an HMAC-signed session cookie (`AUTH_SECRET`). No unauthenticated read or
-  write path; a missing secret disables auth (dev only). See [GO-LIVE.md](GO-LIVE.md) Step 3.
+- **Single-user username + password** gates every page and `/api` route: the username + PBKDF2
+  password hash live in D1 (`app_credentials`, changeable in-app under _Account_); an HMAC-signed
+  session cookie (`AUTH_SECRET`) is the only Worker secret and turns the gate on (unset ⇒ open, dev
+  only). Credential-change routes require the current password. See [GO-LIVE.md](GO-LIVE.md) Step 3.
 - Security headers (CSP `default-src 'self'`, HSTS, nosniff, `frame-ancestors 'none'`) via
   `public/_headers` (SPA) and `secureHeaders` (API).
 - Zod at every boundary; integer-paise only; no money/PII in logs; parameterized queries.
-- **Do not enter real data until the login password is set** (SETUP.md §7 / GO-LIVE.md Step 3).
+- **Do not enter real data until the login is set** (SETUP.md §7 / GO-LIVE.md Step 3).
 
 ---
 
@@ -102,7 +104,7 @@ typecheck + both suites + build + `pnpm audit` on every push/PR.
   and the `audit_log` table.
 - **Secrets** live only in `wrangler secret` / `.dev.vars` (gitignored) — never in the repo. Rotate
   on any suspicion.
-- **Incident basics:** suspected bad data → restore via Time Travel to just before it; suspected
-  key/password leak → re-run `node scripts/hash-password.mjs`, then `wrangler secret put` both
-  `AUTH_PASSWORD_HASH` and `AUTH_SECRET` (rotating `AUTH_SECRET` logs out every session), rotate the
-  D1 API token, and redeploy.
+- **Change login / incident basics:** change username or password in-app (header → account icon →
+  _Account_), or re-run `node scripts/setup-login.mjs`. On a suspected leak, also rotate `AUTH_SECRET`
+  (the script offers it — this logs out every session) and the D1 API token, then restore data via
+  Time Travel if it was tampered with.

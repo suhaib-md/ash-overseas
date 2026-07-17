@@ -86,6 +86,31 @@ export const listQuerySchema = z.object({
   q: z.string().max(200).optional(),
 });
 
+/** Username: 3–64 chars, letters/digits/._- (case-insensitive at login). */
+export const usernameField = z
+  .string()
+  .trim()
+  .min(3, 'Username must be at least 3 characters')
+  .max(64)
+  .regex(/^[A-Za-z0-9._-]+$/, 'Use only letters, digits, dot, underscore or hyphen');
+
+/** A new password to set (min 8). The login field stays lenient (min 1). */
+export const newPasswordField = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(256);
+
 export const loginSchema = z.object({
+  username: z.string().trim().min(1).max(64),
   password: z.string().min(1).max(256),
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(256),
+  newPassword: newPasswordField,
+});
+
+export const changeUsernameSchema = z.object({
+  currentPassword: z.string().min(1).max(256),
+  newUsername: usernameField,
 });
