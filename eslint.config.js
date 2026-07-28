@@ -44,4 +44,14 @@ export default tseslint.config(
     files: ['*.config.{ts,js}', 'vitest.config.ts'],
     languageOptions: { globals: globals.node },
   },
+  // Maintenance scripts (deploy, login provisioning) run in Node
+  {
+    files: ['scripts/**/*.{mjs,js}'],
+    languageOptions: { globals: globals.node },
+  },
+  // Service worker (app-shell cache) runs in a SW context
+  {
+    files: ['public/sw.js'],
+    languageOptions: { globals: globals.serviceworker },
+  },
 );

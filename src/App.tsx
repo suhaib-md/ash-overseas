@@ -7,7 +7,7 @@ import { DealerDetail } from './features/DealerDetail';
 import { AuditLog } from './features/AuditLog';
 import { Account } from './features/Account';
 import { Login } from './features/Login';
-import { authMe, setUnauthorizedHandler } from './lib/api';
+import { authMe, logout, setUnauthorizedHandler } from './lib/api';
 
 export function App() {
   const [status, setStatus] = useState<'loading' | 'authed' | 'login'>('loading');
@@ -32,10 +32,24 @@ export function App() {
     check();
   }, [navigate, check]);
 
+  // Reset the URL too — a plain reload would keep the page you logged out from
+  // (e.g. /account) in the address bar behind the login screen.
+  const onLogout = useCallback(async () => {
+    await logout();
+    setUsername('');
+    navigate('/', { replace: true });
+    setStatus('login');
+  }, [navigate]);
+
   useEffect(() => {
-    setUnauthorizedHandler(() => setStatus('login'));
+    // Session expired mid-use: same treatment, so the login screen never sits on
+    // top of a stale path.
+    setUnauthorizedHandler(() => {
+      navigate('/', { replace: true });
+      setStatus('login');
+    });
     check();
-  }, [check]);
+  }, [check, navigate]);
 
   if (status === 'loading') {
     return (
@@ -62,6 +76,7 @@ export function App() {
               username={username}
               authRequired={authRequired}
               onUsernameChanged={setUsername}
+              onLogout={onLogout}
             />
           }
         />

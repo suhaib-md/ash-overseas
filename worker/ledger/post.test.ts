@@ -262,13 +262,13 @@ describe('posting layer against real D1', () => {
           date: new Date(),
           taxType: 'none',
         }),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         db.insert(ledgerEntries).values({
           dealerId,
           account: 'actual',
           entryDate: new Date(),
           sourceType: 'transaction',
           sourceId: 999,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any),
       ]),
     ).rejects.toThrow();

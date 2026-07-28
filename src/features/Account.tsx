@@ -1,17 +1,19 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { UserCog, KeyRound, LogOut, AlertTriangle } from 'lucide-react';
-import { changePassword, changeUsername, logout } from '../lib/api';
+import { changePassword, changeUsername } from '../lib/api';
 import { useToast } from '../components/Toast';
 
 export function Account({
   username,
   authRequired,
   onUsernameChanged,
+  onLogout,
 }: {
   username: string;
   /** False when AUTH_SECRET is unset (local dev): there is no session to log out of. */
   authRequired: boolean;
   onUsernameChanged: (next: string) => void;
+  onLogout: () => void;
 }) {
   return (
     <div className="mx-auto max-w-xl space-y-6">
@@ -50,10 +52,7 @@ export function Account({
       {authRequired && (
         <button
           type="button"
-          onClick={async () => {
-            await logout();
-            location.reload();
-          }}
+          onClick={onLogout}
           className="flex items-center gap-2 text-body-md font-medium text-negative hover:underline"
         >
           <LogOut size={16} />
