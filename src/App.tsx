@@ -13,6 +13,7 @@ export function App() {
   const [status, setStatus] = useState<'loading' | 'authed' | 'login'>('loading');
   const [username, setUsername] = useState('');
   const [authRequired, setAuthRequired] = useState(true);
+  const navigate = useNavigate();
 
   const check = useCallback(() => {
     authMe()
@@ -23,6 +24,13 @@ export function App() {
       })
       .catch(() => setStatus('login'));
   }, []);
+
+  // The login screen renders over whatever URL is in the address bar, so without
+  // this a fresh sign-in would land on that stale path (e.g. /account) instead of Home.
+  const onLoggedIn = useCallback(() => {
+    navigate('/', { replace: true });
+    check();
+  }, [navigate, check]);
 
   useEffect(() => {
     setUnauthorizedHandler(() => setStatus('login'));
@@ -36,7 +44,7 @@ export function App() {
       </div>
     );
   }
-  if (status === 'login') return <Login onSuccess={check} />;
+  if (status === 'login') return <Login onSuccess={onLoggedIn} />;
 
   return (
     <Routes>
