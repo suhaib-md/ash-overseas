@@ -1,13 +1,16 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { UserCog, KeyRound, LogOut } from 'lucide-react';
+import { UserCog, KeyRound, LogOut, AlertTriangle } from 'lucide-react';
 import { changePassword, changeUsername, logout } from '../lib/api';
 import { useToast } from '../components/Toast';
 
 export function Account({
   username,
+  authRequired,
   onUsernameChanged,
 }: {
   username: string;
+  /** False when AUTH_SECRET is unset (local dev): there is no session to log out of. */
+  authRequired: boolean;
   onUsernameChanged: (next: string) => void;
 }) {
   return (
@@ -15,25 +18,48 @@ export function Account({
       <header>
         <h1 className="text-headline-md text-on-surface">Account</h1>
         <p className="mt-1 text-body-md text-on-surface-variant">
-          Signed in as <span className="font-semibold text-on-surface">{username}</span>. Changes
-          take effect immediately.
+          {authRequired && username ? (
+            <>
+              Signed in as <span className="font-semibold text-on-surface">{username}</span>. Changes
+              take effect immediately.
+            </>
+          ) : (
+            'Manage the stored login credentials.'
+          )}
         </p>
       </header>
+
+      {!authRequired && (
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-lg border border-outline-variant bg-surface-container-low p-4 text-body-md text-on-surface-variant"
+        >
+          <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+          <span>
+            The login gate is <strong className="text-on-surface">off</strong> in this environment
+            because <code>AUTH_SECRET</code> is not set — so there is no session to log out of. Set
+            it in <code>.dev.vars</code> (local) or as a Worker secret (production) to require a
+            login. The changes below still update the stored credentials.
+          </span>
+        </p>
+      )}
 
       <UsernameCard current={username} onChanged={onUsernameChanged} />
       <PasswordCard />
 
-      <button
-        type="button"
-        onClick={async () => {
-          await logout();
-          location.reload();
-        }}
-        className="flex items-center gap-2 text-body-md font-medium text-negative hover:underline"
-      >
-        <LogOut size={16} />
-        Log out
-      </button>
+      {authRequired && (
+        <button
+          type="button"
+          onClick={async () => {
+            await logout();
+            location.reload();
+          }}
+          className="flex items-center gap-2 text-body-md font-medium text-negative hover:underline"
+        >
+          <LogOut size={16} />
+          Log out
+        </button>
+      )}
     </div>
   );
 }

@@ -12,11 +12,13 @@ import { authMe, setUnauthorizedHandler } from './lib/api';
 export function App() {
   const [status, setStatus] = useState<'loading' | 'authed' | 'login'>('loading');
   const [username, setUsername] = useState('');
+  const [authRequired, setAuthRequired] = useState(true);
 
   const check = useCallback(() => {
     authMe()
       .then((r) => {
         setUsername(r.username ?? '');
+        setAuthRequired(r.required);
         setStatus(r.authenticated ? 'authed' : 'login');
       })
       .catch(() => setStatus('login'));
@@ -47,7 +49,13 @@ export function App() {
         <Route path="/audit" element={<AuditLog />} />
         <Route
           path="/account"
-          element={<Account username={username} onUsernameChanged={setUsername} />}
+          element={
+            <Account
+              username={username}
+              authRequired={authRequired}
+              onUsernameChanged={setUsername}
+            />
+          }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
