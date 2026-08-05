@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Ban, ChevronDown, HandCoins, Plus } from 'lucide-react';
 import {
   getDealer,
@@ -43,6 +43,14 @@ export function DealerDetail({
   const [voiding, setVoiding] = useState(false);
   const [expanded, setExpanded] = useState<number | null>(null);
   const toast = useToast();
+
+  // Newest first for reading. The API returns entries in (entry_date, id) order —
+  // the order the running balances were computed in — so only the DISPLAY is
+  // reversed; each row still shows the stored balance as of that entry.
+  const visibleEntries = useMemo(
+    () => (ledger ? [...ledger.entries].reverse() : []),
+    [ledger],
+  );
 
   const loadHeader = useCallback(() => {
     getDealer(dealerId)
@@ -173,7 +181,7 @@ export function DealerDetail({
         </div>
       ) : (
         <ul className="divide-y divide-outline-variant overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest">
-          {ledger.entries.map((e) => {
+          {visibleEntries.map((e) => {
             const isDebit = e.debitPaise > 0;
             const delta = isDebit ? e.debitPaise : e.creditPaise;
             const labelText = e.label === 'adjustment' ? 'reversal' : (e.label ?? '');

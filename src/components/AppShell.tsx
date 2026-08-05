@@ -9,6 +9,7 @@ import {
   Plus,
   ScrollText,
   UserCircle2,
+  LogOut,
   type LucideIcon,
 } from 'lucide-react';
 import { DealerPicker } from '../features/DealerPicker';
@@ -42,7 +43,16 @@ function titleFor(pathname: string): string {
  *  - Desktop (lg+): persistent left sidebar + wide content — a native web app.
  *  - Mobile: top bar + thumb-reachable bottom tab bar — a native mobile app.
  */
-export function ShellLayout({ username }: { username: string }) {
+export function ShellLayout({
+  username,
+  authRequired,
+  onLogout,
+}: {
+  username: string;
+  /** False when AUTH_SECRET is unset (local dev): nothing to log out of. */
+  authRequired: boolean;
+  onLogout: () => void;
+}) {
   const location = useLocation();
   const navigate = useNavigate();
   const [pickDealer, setPickDealer] = useState(false);
@@ -121,6 +131,17 @@ export function ShellLayout({ username }: { username: string }) {
                 </span>
               )}
             </NavLink>
+            {authRequired && (
+              <button
+                type="button"
+                onClick={onLogout}
+                title="Log out"
+                aria-label="Log out"
+                className="rounded-lg p-2 text-on-surface-variant transition-colors hover:bg-surface-container hover:text-negative"
+              >
+                <LogOut size={18} />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setPickDealer(true)}

@@ -62,7 +62,11 @@ export function App() {
 
   return (
     <Routes>
-      <Route element={<ShellLayout username={username} />}>
+      <Route
+        element={
+          <ShellLayout username={username} authRequired={authRequired} onLogout={onLogout} />
+        }
+      >
         <Route path="/" element={<Home />} />
         <Route path="/purchase" element={<DealerListPage activity="purchase" />} />
         <Route path="/sale" element={<DealerListPage activity="sale" />} />
