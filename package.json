@@ -29,12 +29,12 @@
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.28",
+    "hono": "^4.13.2",
     "jose": "^6.2.3",
     "lucide-react": "^1.23.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-router": "^8.1.0",
+    "react-router": "^8.3.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

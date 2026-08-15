@@ -108,6 +108,14 @@ Two layers:
 - **Time Travel** (built-in, instant): restore the live DB to any moment in the last 30 days.
 - **SQL dumps** for long-term/off-store retention: `pnpm db:export`.
 
+> ✅ **Restore verified 2026-08-15.** The full drill below was performed against the live prod DB:
+> `pnpm db:export` produced a dump containing all 8 tables (incl. `app_credentials`), which restored
+> into a scratch D1 cleanly. Because prod was still empty, data fidelity was proved separately by
+> seeding the scratch DB with a dealer + an `opening` ledger entry and re-exporting: every column
+> round-tripped byte-exact, including `running_balance_paise = 26932300` (₹2,69,323) — integer paise
+> survive the export/restore path with no float artefact. Scratch DB deleted afterwards.
+> **Repeat this drill once real data exists**, so the round-trip is proved on your actual ledger.
+
 **Prove a restore works — do this once:**
 
 ```sh
