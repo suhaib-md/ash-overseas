@@ -9,6 +9,10 @@ account.
 - **Current** = the declared/invoiced figures used for GST.
 - GST is computed on the **current** value but posts as real cash on the **actual** side.
 
+> **New here?** Start with [`HANDOVER.md`](HANDOVER.md) — a plain-language guide covering setup, the
+> day-to-day ops runbook, every app feature step by step, and a walkthrough script for showing the
+> owner how to use it.
+
 Authoritative spec: [`SRS.md`](SRS.md). Engineering/security/UX rules and the phased build plan:
 [`CLAUDE.md`](CLAUDE.md). Cloudflare provisioning + backups: [`SETUP.md`](SETUP.md). Visual system:
 [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md).
