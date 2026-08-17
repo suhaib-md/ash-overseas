@@ -574,8 +574,19 @@ update the package, run `pnpm test:all`, then push.
 
 **"A balance looks wrong."**
 Open the Audit log first. The stored balance can be re-derived from scratch: `recomputeLedger()` in
-`shared/ledger.ts` replays every non-voided entry in `(entry_date, id)` order. That replay is the
-source of truth if a stored figure is ever doubted.
+`shared/ledger.ts` replays every entry in `(entry_date, id)` order. That replay is the source of
+truth if a stored figure is ever doubted.
+
+To check (and repair) every stored balance in the database against that replay:
+
+```sh
+node scripts/repair-balances.mjs            # dry run — reports mismatches, writes nothing
+node scripts/repair-balances.mjs --apply    # rewrite them
+```
+
+It only ever touches `running_balance_paise` and reversal dates — never an amount — and running it
+twice changes nothing. A clean database reports `0` mismatches; anything else means a bug, so
+investigate before applying.
 
 **"Wrangler prints `✨ Success!` then seems to freeze on Windows."**
 Known quirk. It already worked. Press Ctrl-C.
