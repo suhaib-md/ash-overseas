@@ -6,7 +6,7 @@
  * pre-allocated (single-writer safe) so the whole event fits in one batch. Running
  * balances are computed from the stored previous balance (SRS §13.1).
  */
-import { and, desc, eq, like, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { Db } from '../db/client';
 import {
@@ -27,6 +27,7 @@ import {
   applyToBalance,
   movementPostings,
   openingPosting,
+  recomputeLedger,
   transactionPostings,
 } from '../../shared/ledger';
 
@@ -61,6 +62,80 @@ async function nextHumanId(db: Db, mode: TransactionMode, date: Date): Promise<s
 
 function auditCreate(entity: string, entityId: number, after: unknown) {
   return { action: 'create', entity, entityId, beforeJson: null, afterJson: JSON.stringify(after) };
+}
+
+/** A ledger row that is about to be inserted, taking part in a replay before it exists. */
+interface PendingEntry {
+  id: number;
+  account: Account;
+  entryDate: Date;
+  debitPaise: number;
+  creditPaise: number;
+  runningBalancePaise: number;
+}
+
+/**
+ * Replay `accounts` in canonical `(entry_date, id)` order **including** the `pending`
+ * rows, write each pending row's correct balance into it, and return UPDATE statements
+ * for the already-stored rows whose running balance the replay changed.
+ *
+ * Needed whenever a row lands anywhere other than the very end of the ledger: every
+ * later row's stored balance was computed without it (SRS §13.2/§13.3).
+ */
+async function replayAccounts(
+  db: Db,
+  dealerId: number,
+  accounts: readonly Account[],
+  pending: PendingEntry[],
+) {
+  const stored = await db
+    .select({
+      id: ledgerEntries.id,
+      account: ledgerEntries.account,
+      entryDate: ledgerEntries.entryDate,
+      debitPaise: ledgerEntries.debitPaise,
+      creditPaise: ledgerEntries.creditPaise,
+      runningBalancePaise: ledgerEntries.runningBalancePaise,
+    })
+    .from(ledgerEntries)
+    .where(
+      and(eq(ledgerEntries.dealerId, dealerId), inArray(ledgerEntries.account, [...accounts])),
+    );
+
+  // recomputeLedger orders on a numeric date; ids are globally unique across accounts.
+  const all = [...stored, ...pending].map((e) => ({
+    id: e.id,
+    account: e.account,
+    entryDate: e.entryDate.getTime(),
+    debitPaise: e.debitPaise,
+    creditPaise: e.creditPaise,
+  }));
+  const storedById = new Map(stored.map((s) => [s.id, s]));
+  const pendingById = new Map(pending.map((p) => [p.id, p]));
+
+  const fixes = [];
+  const finals: Partial<Record<Account, number>> = {};
+  for (const account of accounts) {
+    const replayedAll = recomputeLedger(all, account);
+    finals[account] = replayedAll.at(-1)?.runningBalancePaise ?? 0;
+    for (const replayed of replayedAll) {
+      const p = pendingById.get(replayed.id);
+      if (p) {
+        p.runningBalancePaise = replayed.runningBalancePaise;
+        continue;
+      }
+      const s = storedById.get(replayed.id);
+      if (s && s.runningBalancePaise !== replayed.runningBalancePaise) {
+        fixes.push(
+          db
+            .update(ledgerEntries)
+            .set({ runningBalancePaise: replayed.runningBalancePaise })
+            .where(eq(ledgerEntries.id, replayed.id)),
+        );
+      }
+    }
+  }
+  return { fixes, finals };
 }
 
 // --- transactions ----------------------------------------------------------
@@ -107,17 +182,14 @@ export async function postTransaction(
     isCreditDebitNote: input.isCreditDebitNote,
   });
 
-  const [priorActual, priorCurrent, txnId, humanId] = await Promise.all([
-    latestBalance(db, input.dealerId, 'actual'),
-    latestBalance(db, input.dealerId, 'current'),
+  const [txnId, humanId, firstEntryId] = await Promise.all([
     nextId(db, transactions),
     nextHumanId(db, input.mode, input.date),
+    nextId(db, ledgerEntries),
   ]);
 
   const actual = postings.find((p) => p.account === 'actual')!;
   const current = postings.find((p) => p.account === 'current')!;
-  const actualBalancePaise = applyToBalance(priorActual, actual);
-  const currentBalancePaise = applyToBalance(priorCurrent, current);
   const description = input.referenceTag ?? humanId;
 
   const txnRow = {
@@ -157,6 +229,7 @@ export async function postTransaction(
 
   const entryRows = [
     {
+      id: firstEntryId,
       dealerId: input.dealerId,
       account: 'actual' as const,
       entryDate: input.date,
@@ -164,11 +237,12 @@ export async function postTransaction(
       sourceId: txnId,
       debitPaise: actual.debitPaise,
       creditPaise: actual.creditPaise,
-      runningBalancePaise: actualBalancePaise,
+      runningBalancePaise: 0, // set by the replay below
       label: actual.label,
       description,
     },
     {
+      id: firstEntryId + 1,
       dealerId: input.dealerId,
       account: 'current' as const,
       entryDate: input.date,
@@ -176,20 +250,36 @@ export async function postTransaction(
       sourceId: txnId,
       debitPaise: current.debitPaise,
       creditPaise: current.creditPaise,
-      runningBalancePaise: currentBalancePaise,
+      runningBalancePaise: 0, // set by the replay below
       label: current.label,
       description,
     },
   ];
 
+  // Replay rather than just appending to the latest balance: the entry may be
+  // back-dated, in which case it lands mid-ledger and every later entry's stored
+  // balance needs rewriting (SRS §13.2).
+  const { fixes, finals } = await replayAccounts(
+    db,
+    input.dealerId,
+    ['actual', 'current'],
+    entryRows,
+  );
+
   await db.batch([
     db.insert(transactions).values(txnRow),
     db.insert(transactionLines).values(lineRows),
     db.insert(ledgerEntries).values(entryRows),
+    ...fixes,
     db.insert(auditLog).values(auditCreate('transactions', txnId, { ...txnRow, lines: lineRows })),
   ]);
 
-  return { transactionId: txnId, humanId, actualBalancePaise, currentBalancePaise };
+  return {
+    transactionId: txnId,
+    humanId,
+    actualBalancePaise: finals.actual ?? 0,
+    currentBalancePaise: finals.current ?? 0,
+  };
 }
 
 // --- money movements -------------------------------------------------------
@@ -216,25 +306,32 @@ export async function postMovement(
     accountScope: input.accountScope,
   });
 
-  const movementId = await nextId(db, moneyMovements);
-  const balances: Partial<Record<Account, number>> = {};
-  const entryRows = [];
-  for (const p of postings) {
-    const bal = applyToBalance(await latestBalance(db, input.dealerId, p.account), p);
-    balances[p.account] = bal;
-    entryRows.push({
-      dealerId: input.dealerId,
-      account: p.account,
-      entryDate: input.date,
-      sourceType: 'movement' as const,
-      sourceId: movementId,
-      debitPaise: p.debitPaise,
-      creditPaise: p.creditPaise,
-      runningBalancePaise: bal,
-      label: p.label,
-      description: input.reference ?? null,
-    });
-  }
+  const [movementId, firstEntryId] = await Promise.all([
+    nextId(db, moneyMovements),
+    nextId(db, ledgerEntries),
+  ]);
+  const entryRows = postings.map((p, i) => ({
+    id: firstEntryId + i,
+    dealerId: input.dealerId,
+    account: p.account,
+    entryDate: input.date,
+    sourceType: 'movement' as const,
+    sourceId: movementId,
+    debitPaise: p.debitPaise,
+    creditPaise: p.creditPaise,
+    runningBalancePaise: 0, // set by the replay below
+    label: p.label,
+    description: input.reference ?? null,
+  }));
+
+  // As in postTransaction: a back-dated movement lands mid-ledger, so replay.
+  const { fixes, finals } = await replayAccounts(
+    db,
+    input.dealerId,
+    postings.map((p) => p.account),
+    entryRows,
+  );
+  const balances: Partial<Record<Account, number>> = finals;
 
   const movementRow = {
     id: movementId,
@@ -252,6 +349,7 @@ export async function postMovement(
   await db.batch([
     db.insert(moneyMovements).values(movementRow),
     db.insert(ledgerEntries).values(entryRows),
+    ...fixes,
     db.insert(auditLog).values(auditCreate('money_movements', movementId, movementRow)),
   ]);
 
@@ -297,12 +395,23 @@ export async function postOpening(
  * Void a transaction or money movement: flag the source, append equal-and-opposite
  * reversing ledger entries (SRS §13.3/13.4), and write an audit row — all atomically.
  * The originals are retained; the reversals neutralise their effect on replay.
+ *
+ * Two rules make the resulting ledger read correctly, both required by the SRS:
+ *
+ * 1. The reversal carries the **original entry's date**, so it sorts adjacent to what
+ *    it reverses (SRS §10.7) instead of jumping to the end of the ledger. Stamping it
+ *    with `new Date()` put it after every same-day entry, which pinned it to the top of
+ *    the newest-first view and made the headline balance read the reversal's (stale)
+ *    running balance rather than the genuinely-latest entry.
+ * 2. Inserting an entry in the *middle* of the ledger invalidates the stored running
+ *    balance of everything after it, so we replay the affected accounts and rewrite
+ *    them in the same batch — "the replay function then restores correct running
+ *    balances" (SRS §13.3).
  */
 export async function voidSource(
   db: Db,
   input: { sourceType: 'transaction' | 'movement'; sourceId: number; entryDate?: Date },
 ): Promise<{ reversalCount: number }> {
-  const entryDate = input.entryDate ?? new Date();
   const dbSourceType: SourceType = input.sourceType === 'transaction' ? 'transaction' : 'movement';
 
   const originals = await db
@@ -315,27 +424,30 @@ export async function voidSource(
     throw new Error(`no ledger entries for ${dbSourceType} #${input.sourceId}`);
 
   const dealerId = originals[0]!.dealerId;
-  const running: Record<Account, number> = {
-    actual: await latestBalance(db, dealerId, 'actual'),
-    current: await latestBalance(db, dealerId, 'current'),
-  };
+  // Pre-allocate ids so the reversals can take part in the replay below and still
+  // commit inside one batch (single-writer, as elsewhere in this module).
+  const firstReversalId = await nextId(db, ledgerEntries);
 
-  const reversalRows = originals.map((o) => {
-    const rev = { debitPaise: o.creditPaise, creditPaise: o.debitPaise };
-    running[o.account] = applyToBalance(running[o.account], rev);
-    return {
-      dealerId,
-      account: o.account,
-      entryDate,
-      sourceType: 'adjustment' as const,
-      sourceId: input.sourceId,
-      debitPaise: rev.debitPaise,
-      creditPaise: rev.creditPaise,
-      runningBalancePaise: running[o.account],
-      label: 'adjustment',
-      description: `Reversal of ${dbSourceType} #${input.sourceId}`,
-    };
-  });
+  const reversalRows = originals.map((o, i) => ({
+    id: firstReversalId + i,
+    dealerId,
+    account: o.account,
+    entryDate: input.entryDate ?? o.entryDate, // adjacent to the original (SRS §10.7)
+    sourceType: 'adjustment' as const,
+    sourceId: input.sourceId,
+    debitPaise: o.creditPaise,
+    creditPaise: o.debitPaise,
+    runningBalancePaise: 0, // replaced by the replay below
+    label: 'adjustment',
+    description: `Reversal of ${dbSourceType} #${input.sourceId}`,
+  }));
+
+  const { fixes: balanceFixes } = await replayAccounts(
+    db,
+    dealerId,
+    [...new Set(originals.map((o) => o.account))],
+    reversalRows,
+  );
 
   const updateSource =
     input.sourceType === 'transaction'
@@ -348,6 +460,7 @@ export async function voidSource(
   await db.batch([
     updateSource,
     db.insert(ledgerEntries).values(reversalRows),
+    ...balanceFixes,
     db.insert(auditLog).values({
       action: 'void',
       entity: input.sourceType === 'transaction' ? 'transactions' : 'money_movements',

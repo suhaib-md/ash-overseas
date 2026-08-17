@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, afterAll, beforeEach, describe, it, expect } from 'vitest';
 import { Miniflare } from 'miniflare';
 import { migrate } from 'drizzle-orm/d1/migrator';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { getDb, type Db } from '../db/client';
 import {
   dealers,
@@ -310,5 +310,127 @@ describe('posting layer against real D1', () => {
     });
     expect(o.balancePaise).toBe(-R(50000));
     expect(await storedBalance(dealerId, 'actual')).toBe(-R(50000));
+  });
+});
+
+// Regression: reported from production 2026-08-17. A void stamped the reversal with
+// `new Date()` while user entries are stamped at midnight of the chosen date, so the
+// reversal sorted after every same-day entry. That (a) pinned it to the top of the
+// newest-first ledger and (b) made the headline balance read the reversal's stale
+// running balance instead of the genuinely-latest entry. SRS §10.7 + §13.3.
+describe('void ordering & balance repair', () => {
+  const DAY = new Date('2026-08-17');
+
+  async function purchase(dealerId: number, rupees: number, date = DAY): Promise<number> {
+    const r = await postTransaction(db, {
+      dealerId,
+      date,
+      mode: 'purchase',
+      taxType: 'none',
+      lines: [
+        {
+          itemName: 'slag',
+          quantity: 1,
+          actualRatePaise: R(rupees),
+          currentRatePaise: R(rupees),
+          gstRatePercent: 0,
+        },
+      ],
+    });
+    return r.transactionId;
+  }
+
+  it('a transaction entered AFTER a same-day void continues from the reversed balance', async () => {
+    const dealerId = await makeDealer();
+    const first = await purchase(dealerId, 7890); // actual −7,890
+    await postMovement(db, {
+      dealerId,
+      date: DAY,
+      direction: 'paid',
+      amountPaise: R(10000),
+      accountScope: 'actual',
+    }); // → +2,110
+
+    // Void WITHOUT an explicit entryDate — this is what the API route does.
+    await voidSource(db, { sourceType: 'transaction', sourceId: first });
+    expect(await storedBalance(dealerId, 'actual')).toBe(R(10000));
+
+    await purchase(dealerId, 1278); // → 10,000 − 1,278 = 8,722
+    expect(await storedBalance(dealerId, 'actual')).toBe(R(8722));
+
+    // …and the reversal must NOT be the newest entry any more.
+    const ordered = await db
+      .select({ sourceType: ledgerEntries.sourceType, bal: ledgerEntries.runningBalancePaise })
+      .from(ledgerEntries)
+      .where(and(eq(ledgerEntries.dealerId, dealerId), eq(ledgerEntries.account, 'actual')))
+      .orderBy(asc(ledgerEntries.entryDate), asc(ledgerEntries.id));
+    expect(ordered.at(-1)!.sourceType).toBe('transaction');
+    expect(ordered.at(-1)!.bal).toBe(R(8722));
+  });
+
+  it('voiding an older entry repairs the running balance of every later entry', async () => {
+    const dealerId = await makeDealer();
+    const old = await purchase(dealerId, 5000, new Date('2026-08-01')); // −5,000
+    await purchase(dealerId, 1000, new Date('2026-08-10')); // −6,000
+    await postMovement(db, {
+      dealerId,
+      date: new Date('2026-08-15'),
+      direction: 'paid',
+      amountPaise: R(2000),
+      accountScope: 'actual',
+    }); // −4,000
+    expect(await storedBalance(dealerId, 'actual')).toBe(-R(4000));
+
+    await voidSource(db, { sourceType: 'transaction', sourceId: old });
+
+    // Reversing a 5,000 purchase lifts every later balance by 5,000.
+    const ordered = await db
+      .select({ bal: ledgerEntries.runningBalancePaise })
+      .from(ledgerEntries)
+      .where(and(eq(ledgerEntries.dealerId, dealerId), eq(ledgerEntries.account, 'actual')))
+      .orderBy(asc(ledgerEntries.entryDate), asc(ledgerEntries.id));
+    expect(ordered.map((r) => r.bal)).toEqual([-R(5000), 0, -R(1000), R(1000)]);
+    expect(await storedBalance(dealerId, 'actual')).toBe(R(1000));
+  });
+});
+
+// Sibling of the void bug: an entry dated in the past also lands mid-ledger, so every
+// later entry's stored balance was computed without it.
+describe('back-dated entries', () => {
+  it('a back-dated transaction repairs the balances of entries that follow it', async () => {
+    const dealerId = await makeDealer();
+    await postMovement(db, {
+      dealerId,
+      date: new Date('2026-08-20'),
+      direction: 'paid',
+      amountPaise: R(5000),
+      accountScope: 'actual',
+    }); // +5,000
+
+    // Owner enters a deal from last week, after already recording the newer payment.
+    await postTransaction(db, {
+      dealerId,
+      date: new Date('2026-08-10'),
+      mode: 'purchase',
+      taxType: 'none',
+      lines: [
+        {
+          itemName: 'slag',
+          quantity: 1,
+          actualRatePaise: R(2000),
+          currentRatePaise: R(2000),
+          gstRatePercent: 0,
+        },
+      ],
+    }); // −2,000, dated BEFORE the payment
+
+    // True order: purchase (−2,000) then payment (+3,000).
+    const ordered = await db
+      .select({ bal: ledgerEntries.runningBalancePaise })
+      .from(ledgerEntries)
+      .where(and(eq(ledgerEntries.dealerId, dealerId), eq(ledgerEntries.account, 'actual')))
+      .orderBy(asc(ledgerEntries.entryDate), asc(ledgerEntries.id));
+    expect(ordered.map((r) => r.bal)).toEqual([-R(2000), R(3000)]);
+    expect(await storedBalance(dealerId, 'actual')).toBe(R(3000));
   });
 });
